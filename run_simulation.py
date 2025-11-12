@@ -33,26 +33,17 @@ def run_simulation(config, verbose=True):
         print(f"垃圾生成率: {config['p']*100:.1f}%")
         print(f"初始能量: {config['initial_energy']}")
         print("=" * 50)
-        print("\n開始模擬...\n")
+        print("\n開始模擬...")
+        print("提示：關閉視窗、按 ESC 或 Ctrl+C 可結束模擬\n")
+
+    # 先渲染一次初始狀態（初始化 Pygame）
+    env.render()
 
     # 模擬循環
     done = False
     try:
+        import pygame
         while not done:
-            # 處理 Pygame 事件
-            import pygame
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    done = True
-                    break
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        done = True
-                        break
-
-            if done:
-                break
-
             # 隨機生成4個動作
             actions = [random.randint(0, 4) for _ in range(4)]
 
@@ -61,6 +52,16 @@ def run_simulation(config, verbose=True):
 
             # 渲染當前狀態
             env.render()
+
+            # 處理 Pygame 事件（放在渲染後）
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    done = True
+                    break
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        done = True
+                        break
 
             # 每100回合顯示統計
             if verbose and env.current_step % 100 == 0:

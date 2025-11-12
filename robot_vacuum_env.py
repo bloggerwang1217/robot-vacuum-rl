@@ -565,20 +565,15 @@ def main():
     print(f"房間大小: {config['n']}×{config['n']}")
     print(f"總回合數: {config['n_steps']}")
     print("\n開始模擬...")
+    print("提示：關閉視窗或按 Ctrl+C 可結束模擬\n")
+
+    # 先渲染一次初始狀態（初始化 Pygame）
+    env.render()
 
     # 模擬循環
     done = False
     try:
         while not done:
-            # 處理 Pygame 事件
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    done = True
-                    break
-
-            if done:
-                break
-
             # 隨機生成4個動作
             actions = [random.randint(0, 4) for _ in range(4)]
 
@@ -587,6 +582,12 @@ def main():
 
             # 渲染當前狀態
             env.render()
+
+            # 處理 Pygame 事件（放在渲染後）
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    done = True
+                    break
 
             # 每100回合顯示統計
             if env.current_step % 100 == 0:
