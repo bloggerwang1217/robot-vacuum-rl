@@ -10,21 +10,13 @@ IDQN 是將單智能體 DQN 演算法直接應用於多智能體環境的最直�
 
 ### 2.1. 環境 (Environment)
 
-*   **基礎環境**：使用現有的 `robot_vacuum_env.py` (能量求生模擬器)。
-*   **智能體數量**：固定為 4 個機器人。
-*   **核心修改**：
-    *   **獎勵函數 (Reward Function)**：在 `robot_vacuum_env.py` 的 `step` 函式中，為每個機器人計算並返回其獨立的獎勵值。
-        *   **正向獎勵**：在充電座上停留並充電時，獲得 `+config['e_charge']`。
-        *   **負向獎勵**：
-            *   移動時，消耗 `config['e_move']`。
-            *   發生碰撞時，消耗 `config['e_collision']`。
-            *   能量耗盡 (機器人停機 `is_active = False`) 時，給予一個較大的負值 (例如 `-100`)。
-    *   **觀測空間 (Observation Space)**：新增 `get_agent_observation(agent_id)` 函式，為每個機器人提供一個局部觀測向量。這個向量將包含：
-        *   機器人自身的 `(x, y)` 座標和 `energy`。
-        *   其他 3 個機器人的**相對 `(dx, dy)` 座標和 `energy`**。
-        *   4 個充電座的**相對 `(dx, dy)` 座標**。
-        *   **重要性**：包含其他機器人的能量資訊對於觀察攻擊性行為至關重要，因為這允許智能體識別「脆弱」的目標。
-    *   **`step` 函式返回值**：修改為 `(observations, rewards, dones, infos)`，其中 `observations`, `rewards`, `dones` 均為包含 4 個元素的列表或元組，分別對應每個機器人的觀測、獎勵和終止狀態。
+*   **基礎引擎**：使用現有的 `robot_vacuum_env.py` (能量求生模擬器) 作為核心的物理模擬引擎。
+*   **API 封裝 (`gym.py`)**：把 `robot_vacuum_env.py` 封裝成一個符合 Gymnasium 標準的多智能體環境。
+*   **核心介面**：這個新的環境 (`gym.py`) 將提供我們在 **`2.3.1. 環境 API 介面`** 中詳細定義的 `reset()` 和 `step()` 方法，其核心規格包括：
+    *   **觀測空間 (Observation Space)**：為每個 agent 提供包含自身狀態、其他 agent 相對狀態（含能量）、以及充電座相對位置的特徵向量。
+    *   **獎勵函數 (Reward Function)**：採用我們詳細定義的「能量管理獎勵」方案。
+    *   **`step` 函式返回值**：返回符合 Gymnasium 標準的 `(observations, rewards, terminations, truncations, infos)` 字典元組。
+    *   **`infos` 字典**：返回豐富的診斷資訊，以供後續分析。
 
 ### 2.2. 智能體 (Agent)
 
@@ -269,6 +261,29 @@ def calculate_reward_for_robot(robot_after_step, prev_robot_state, collision_occ
     *   `mean_final_energy`: 回合結束時，所有 agent 的平均剩餘能量。
 
 透過在 `wandb` 中繪製這些指標隨 `episode` 變化的曲線，我們可以直觀地比較不同實驗參數（如 `epsilon` 和 `n`）對群體動態的影響。
+
+### 4.3. 關鍵模型存檔與視覺化評估 (Key Model Checkpointing & Visual Evaluation)
+
+為了能夠深入分析和重現演化過程中湧現出的有趣動態，我們將實作一個在關鍵時刻儲存所有 agent 模型，並能隨時載入以進行視覺化評估的機制。
+
+1.  **偵測與儲存關鍵模型 (Detect & Save Key Models)**：
+    *   在 `train_dqn.py` 的訓練過程中，我們會監控每一回合的匯總指標（例如，`total_kills_per_episode`）。
+    *   當某一回合的指標達到我們感興趣的條件時（例如，當前回合的「擊殺」數創下新高），我們會將**當前所有 4 個 agent 的 DQN 模型權重**（`.pt` 或 `.pth` 檔案）儲存到一個以該回合編號或事件命名的專屬資料夾中（例如，`models_at_episode_5324/`）。
+
+2.  **定期儲存模型快照 (Periodic Model Snapshots)**：
+    *   除了事件驅動的關鍵模型儲存外，我們還會設定一個**固定的回合間隔**（例如，每 1000 個 episode），自動儲存所有 agent 的模型權重。
+    *   這將提供一個「演化時間軸」，讓我們可以回溯並觀察 agent 策略在不同訓練階段的變化。
+
+3.  **視覺化評估腳本 (`evaluate_models.py`)**：
+    *   我們將建立一個獨立的評估腳本 `evaluate_models.py`。
+    *   該腳本可以讀取儲存下來的某一組（4個）模型權重檔案。
+    *   它會初始化 4 個新的 `DQNAgent` 實例，並載入這些權重。
+    *   接著，它會執行一個或多個新的回合，並**全程開啟 Pygame 渲染**。在這些評估回合中，agent 的 `epsilon` 會被設為一個很低的值（例如 0.05），以主要展示其已學會的策略。
+
+這個功能讓我們可以做到：
+*   **捕捉「演化快照」**：當有趣的群體行為出現時，我們可以精確地「凍結」並保存當時所有 agent 的「大腦」。
+*   **追蹤演化路徑**：透過定期快照，我們可以觀察 agent 策略隨時間的演變。
+*   **重現與分析策略**：我們可以隨時載入這些「大腦」，在視覺化環境中觀察它們的決策模式，從而深入理解導致該有趣行為的策略是什麼，而不是僅僅重播一個固定的動作序列。
 
 ## 5. 健全性檢查與基準驗證 (Sanity Checks and Baseline Validation)
 
