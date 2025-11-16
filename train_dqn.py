@@ -14,7 +14,7 @@ from collections import deque
 from typing import Dict, List, Tuple
 
 # Import the DQN network and components from dqn.py
-from dqn import DQN, init_weights, PrioritizedReplayBuffer
+from dqn import DQN, init_weights
 
 # Import the Gym-wrapped environment (assumed to be implemented by others)
 from gym import RobotVacuumGymEnv
@@ -61,28 +61,14 @@ class IndependentDQNAgent:
         # Optimizer
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=args.lr)
 
-        # Replay buffer
-        if args.use_per:
-            self.memory = PrioritizedReplayBuffer(
-                capacity=args.memory_size,
-                alpha=args.per_alpha,
-                beta=args.per_beta
-            )
-            self.beta_increment = (1.0 - args.per_beta) / args.total_timesteps
-        else:
-            self.memory = deque(maxlen=args.memory_size)
+        # Replay buffer (simple deque)
+        self.memory = deque(maxlen=args.memory_size)
 
         # N-step buffer
         if self.n > 1:
             self.n_step_buffer = deque(maxlen=self.n)
         else:
             self.n_step_buffer = None
-
-        # Training flags
-        self.use_per = args.use_per
-        self.use_ddqn = args.use_ddqn
-        self.gradient_clipping = args.gradient_clipping
-        self.max_norm = args.max_norm
 
         # Counters
         self.train_count = 0
@@ -128,10 +114,7 @@ class IndependentDQNAgent:
                 _, _, _, end_next_state, end_done = self.n_step_buffer[-1]
 
                 # Store n-step transition
-                if self.use_per:
-                    self.memory.add((start_state, start_action, cum_reward, end_next_state, end_done))
-                else:
-                    self.memory.append((start_state, start_action, cum_reward, end_next_state, end_done))
+                self.memory.append((start_state, start_action, cum_reward, end_next_state, end_done))
 
                 if done:
                     self.n_step_buffer.clear()
@@ -139,10 +122,7 @@ class IndependentDQNAgent:
                     self.n_step_buffer.popleft()
         else:
             # 1-step transition
-            if self.use_per:
-                self.memory.add((state, action, reward, next_state, done))
-            else:
-                self.memory.append((state, action, reward, next_state, done))
+            self.memory.append((state, action, reward, next_state, done))
 
     def train_step(self, replay_start_size: int) -> Dict[str, float]:
         """
@@ -160,14 +140,7 @@ class IndependentDQNAgent:
         self.train_count += 1
 
         # Sample batch
-        if self.use_per:
-            batch, indices, weights = self.memory.sample(self.batch_size)
-            weights = torch.tensor(weights, dtype=torch.float32).to(self.device)
-        else:
-            batch = random.sample(self.memory, self.batch_size)
-            indices = None
-            weights = None
-
+        batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
 
         # Convert to tensors
@@ -180,15 +153,9 @@ class IndependentDQNAgent:
         # Compute Q-values
         q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
 
-        # Compute target Q-values
+        # Compute target Q-values (Standard DQN)
         with torch.no_grad():
-            if self.use_ddqn:
-                # Double DQN: use q_net to select action, use target_net to evaluate
-                next_actions = self.q_net(next_states).argmax(1)
-                next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
-            else:
-                # Standard DQN
-                next_q_values = self.target_net(next_states).max(1)[0]
+            next_q_values = self.target_net(next_states).max(1)[0]
 
             # N-step returns: gamma^n
             if self.n > 1:
@@ -196,27 +163,12 @@ class IndependentDQNAgent:
             else:
                 target_q_values = rewards + self.gamma * next_q_values * (1 - dones)
 
-        # Compute loss
-        if self.use_per:
-            loss_unreduced = (q_values - target_q_values) ** 2
-            loss = (loss_unreduced * weights).mean()
-
-            # Update priorities
-            bellman_errors = torch.abs(q_values - target_q_values).detach().cpu().numpy()
-            self.memory.update_priorities(indices, bellman_errors)
-
-            # Anneal beta
-            self.memory.beta = min(1.0, self.memory.beta + self.beta_increment)
-        else:
-            loss = nn.MSELoss()(q_values, target_q_values)
+        # Compute loss (MSE)
+        loss = nn.MSELoss()(q_values, target_q_values)
 
         # Optimize
         self.optimizer.zero_grad()
         loss.backward()
-
-        if self.gradient_clipping:
-            torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=self.max_norm)
-
         self.optimizer.step()
 
         return {
@@ -506,19 +458,10 @@ def main():
     parser.add_argument("--batch-size", type=int, default=32, help="Training batch size")
     parser.add_argument("--replay-start-size", type=int, default=1000, help="Minimum replay buffer size before training")
     parser.add_argument("--target-update-frequency", type=int, default=1000, help="Target network update frequency")
-
-    # Enhanced DQN features
-    parser.add_argument("--use-ddqn", action="store_true", help="Use Double DQN")
-    parser.add_argument("--use-per", action="store_true", help="Use Prioritized Experience Replay")
-    parser.add_argument("--per-alpha", type=float, default=0.6, help="PER alpha parameter")
-    parser.add_argument("--per-beta", type=float, default=0.4, help="PER beta parameter")
     parser.add_argument("--n", type=int, default=1, help="N-step returns (1 for standard DQN)")
-    parser.add_argument("--gradient-clipping", action="store_true", help="Use gradient clipping")
-    parser.add_argument("--max-norm", type=float, default=10.0, help="Max norm for gradient clipping")
 
     # Training settings
     parser.add_argument("--num-episodes", type=int, default=10000, help="Number of training episodes")
-    parser.add_argument("--total-timesteps", type=int, default=1000000, help="Total timesteps for PER beta annealing")
     parser.add_argument("--save-frequency", type=int, default=1000, help="Model save frequency (episodes)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 

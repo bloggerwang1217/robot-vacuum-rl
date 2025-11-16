@@ -58,13 +58,8 @@ class ModelEvaluator:
             epsilon=args.eval_epsilon,  # Use low epsilon for evaluation
             batch_size=32,
             n=args.n,
-            use_per=False,
-            use_ddqn=False,
-            gradient_clipping=False,
-            max_norm=10.0,
             lr=0.0001,
-            memory_size=10000,
-            total_timesteps=1000000
+            memory_size=10000
         )
 
         for agent_id in self.agent_ids:
