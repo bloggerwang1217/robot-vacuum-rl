@@ -242,6 +242,8 @@ class MultiAgentTrainer:
 
         Definition: Robot A collides with robot B at time t, and robot B dies within t+1 to t+5
 
+        Important: Only count as a kill if the collision target was ALIVE at the time of collision
+
         Args:
             episode_infos: Infos records for the entire episode (infos dict at each step)
 
@@ -255,12 +257,14 @@ class MultiAgentTrainer:
                 collision_target = infos[agent_id].get('collided_with_agent_id', None)
 
                 if collision_target is not None:
-                    # Check if collision target dies within next 5 steps
-                    for future_t in range(t + 1, min(t + 6, len(episode_infos))):
-                        future_info = episode_infos[future_t][collision_target]
-                        if future_info.get('is_dead', False):
-                            kills += 1
-                            break  # Count only once
+                    # Check if the collision target was alive at the time of collision
+                    if not infos[collision_target].get('is_dead', False):
+                        # Check if collision target dies within next 5 steps
+                        for future_t in range(t + 1, min(t + 6, len(episode_infos))):
+                            future_info = episode_infos[future_t][collision_target]
+                            if future_info.get('is_dead', False):
+                                kills += 1
+                                break  # Count only once per collision event
 
         return kills
 
