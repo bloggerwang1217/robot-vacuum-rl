@@ -54,7 +54,7 @@ for ((i=0; i<${#configs[@]}; i++)); do
   mkdir -p "$run_dir"
 
   # 執行訓練
-  python "$SCRIPT_DIR/train_dqn.py" \
+  python3 "$SCRIPT_DIR/train_dqn.py" \
     $config_params \
     --num-episodes 10000 \
     --save-dir "$run_dir" \
