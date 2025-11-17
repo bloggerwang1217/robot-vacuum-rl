@@ -241,11 +241,20 @@ class RobotVacuumGymEnv:
             agent_id = self.agent_ids[i]
             robot = robots[i]
 
+            # Convert collided_with_agent_id from integer index to agent_id string
+            collided_with = None
+            if robot['collided_with_agent_id'] is not None:
+                collided_with = self.agent_ids[robot['collided_with_agent_id']]
+
             infos[agent_id] = {
                 'energy': robot['energy'],
                 'position': (robot['x'], robot['y']),
                 'is_active': robot['is_active'],
-                'charge_count': robot['charge_count'],
+                'is_dead': not robot['is_active'],  # For kill analysis
+                'charge_count': robot['charge_count'],  # Keep for backwards compatibility
+                'total_charges': robot['charge_count'],  # Cumulative charges (same as charge_count)
+                'total_agent_collisions': robot['agent_collision_count'],  # Cumulative agent collisions
+                'collided_with_agent_id': collided_with,  # For kill analysis (converted to agent_id string)
                 'step': state['current_step']
             }
 
