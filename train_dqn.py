@@ -48,8 +48,17 @@ class IndependentDQNAgent:
 
         # DQN hyperparameters
         self.gamma = args.gamma
-        self.epsilon = args.epsilon  # Fixed epsilon (no decay)
         self.batch_size = args.batch_size
+
+        # Epsilon configuration
+        self.use_epsilon_decay = args.use_epsilon_decay
+        if self.use_epsilon_decay:
+            self.epsilon = args.epsilon_start
+            self.epsilon_start = args.epsilon_start
+            self.epsilon_end = args.epsilon_end
+            self.epsilon_decay = args.epsilon_decay
+        else:
+            self.epsilon = args.epsilon  # Fixed epsilon (no decay)
 
         # Network architecture
         self.q_net = DQN(action_dim, observation_dim).to(device)
@@ -147,6 +156,14 @@ class IndependentDQNAgent:
         """Update target network"""
         self.target_net.load_state_dict(self.q_net.state_dict())
 
+    def decay_epsilon(self):
+        """
+        Decay epsilon using exponential decay
+        epsilon = max(epsilon_end, epsilon * epsilon_decay)
+        """
+        if self.use_epsilon_decay:
+            self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+
     def save(self, filepath: str):
         """Save model weights"""
         torch.save(self.q_net.state_dict(), filepath)
@@ -225,6 +242,8 @@ class MultiAgentTrainer:
 
         Definition: Robot A collides with robot B at time t, and robot B dies within t+1 to t+5
 
+        Important: Only count as a kill if the collision target was ALIVE at the time of collision
+
         Args:
             episode_infos: Infos records for the entire episode (infos dict at each step)
 
@@ -238,12 +257,14 @@ class MultiAgentTrainer:
                 collision_target = infos[agent_id].get('collided_with_agent_id', None)
 
                 if collision_target is not None:
-                    # Check if collision target dies within next 5 steps
-                    for future_t in range(t + 1, min(t + 6, len(episode_infos))):
-                        future_info = episode_infos[future_t][collision_target]
-                        if future_info.get('is_dead', False):
-                            kills += 1
-                            break  # Count only once
+                    # Check if the collision target was alive at the time of collision
+                    if not infos[collision_target].get('is_dead', False):
+                        # Check if collision target dies within next 5 steps
+                        for future_t in range(t + 1, min(t + 6, len(episode_infos))):
+                            future_info = episode_infos[future_t][collision_target]
+                            if future_info.get('is_dead', False):
+                                kills += 1
+                                break  # Count only once per collision event
 
         return kills
 
@@ -316,6 +337,10 @@ class MultiAgentTrainer:
             # Episode summary
             self.log_episode_summary(episode, episode_rewards, episode_infos_history, step_count)
 
+            # Decay epsilon for all agents
+            for agent in self.agents.values():
+                agent.decay_epsilon()
+
             # Periodic model saving
             if (episode + 1) % self.args.save_frequency == 0:
                 self.save_models(f"episode_{episode + 1}")
@@ -353,6 +378,9 @@ class MultiAgentTrainer:
         # Compute kills
         total_kills = self.compute_kills(episode_infos_history)
 
+        # Get current epsilon from first agent (all agents have same epsilon)
+        current_epsilon = self.agents['robot_0'].epsilon
+
         # Log to wandb
         wandb.log({
             "episode": episode,
@@ -364,6 +392,7 @@ class MultiAgentTrainer:
             "total_charges_per_episode": total_charges,
             "total_kills_per_episode": total_kills,
             "mean_final_energy": mean_final_energy,
+            "epsilon": current_epsilon,
             "global_step": self.global_step
         })
 
@@ -419,7 +448,19 @@ def main():
     # DQN hyperparameters
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
-    parser.add_argument("--epsilon", type=float, default=0.2, help="Fixed epsilon for exploration (no decay)")
+
+    # Epsilon configuration
+    parser.add_argument("--use-epsilon-decay", action="store_true",
+                       help="Use epsilon decay instead of fixed epsilon")
+    parser.add_argument("--epsilon", type=float, default=0.2,
+                       help="Fixed epsilon for exploration (used when --use-epsilon-decay is not set)")
+    parser.add_argument("--epsilon-start", type=float, default=1.0,
+                       help="Starting epsilon for decay (used when --use-epsilon-decay is set)")
+    parser.add_argument("--epsilon-end", type=float, default=0.01,
+                       help="Minimum epsilon for decay (used when --use-epsilon-decay is set)")
+    parser.add_argument("--epsilon-decay", type=float, default=0.995,
+                       help="Epsilon decay rate per episode (used when --use-epsilon-decay is set)")
+
     parser.add_argument("--memory-size", type=int, default=100000, help="Replay buffer size")
     parser.add_argument("--batch-size", type=int, default=32, help="Training batch size")
     parser.add_argument("--replay-start-size", type=int, default=1000, help="Minimum replay buffer size before training")

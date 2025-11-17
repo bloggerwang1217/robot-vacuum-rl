@@ -115,7 +115,9 @@ class RobotVacuumEnv:
                 'y': y,
                 'energy': self.initial_energy,
                 'is_active': True,
-                'charge_count': 0
+                'charge_count': 0,
+                'agent_collision_count': 0,  # 與其他機器人碰撞次數
+                'collided_with_agent_id': None  # 本回合碰撞的對象 (用於 kill 分析)
             }
             self.robots.append(robot)
 
@@ -132,6 +134,10 @@ class RobotVacuumEnv:
             actions: 包含4個動作的列表 [action_0, action_1, action_2, action_3]
                      每個動作是 0-4 的整數
         """
+        # 0. 清除上一回合的碰撞記錄
+        for robot in self.robots:
+            robot['collided_with_agent_id'] = None
+
         # 1. 只處理活躍的機器人
         active_robots = [r for r in self.robots if r['is_active']]
 
@@ -177,6 +183,7 @@ class RobotVacuumEnv:
             else:
                 # 移動動作
                 collision = False
+                collided_agent_id = None
 
                 # 碰撞檢測1: 邊界
                 if not (0 <= planned_x < self.n and 0 <= planned_y < self.n):
@@ -189,6 +196,7 @@ class RobotVacuumEnv:
                             if (other_robot['x'] == planned_x and
                                 other_robot['y'] == planned_y):
                                 collision = True
+                                collided_agent_id = j  # 記錄碰撞對象
                                 break
 
                 # 碰撞檢測3: 搶佔同一格（兩個機器人想移到同一位置）
@@ -198,12 +206,18 @@ class RobotVacuumEnv:
                             if (planned_positions[j] == (planned_y, planned_x) and
                                 j < i):  # 只檢查較早處理的機器人
                                 collision = True
+                                collided_agent_id = j  # 記錄碰撞對象
                                 break
 
                 # 結算移動
                 if collision:
                     # 移動失敗，留在原地，消耗碰撞能量
                     robot['energy'] -= self.e_collision
+
+                    # 如果是與其他機器人碰撞，記錄碰撞資訊
+                    if collided_agent_id is not None:
+                        robot['agent_collision_count'] += 1
+                        robot['collided_with_agent_id'] = collided_agent_id
                 else:
                     # 移動成功
                     robot['x'] = planned_x
