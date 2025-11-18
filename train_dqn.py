@@ -374,6 +374,8 @@ class MultiAgentTrainer:
                                      for agent_id in self.agent_ids)
         total_charges = sum(final_infos.get(agent_id, {}).get('total_charges', 0)
                            for agent_id in self.agent_ids)
+        total_non_home_charges = sum(final_infos.get(agent_id, {}).get('total_non_home_charges', 0)
+                                     for agent_id in self.agent_ids)
 
         # Compute kills
         total_kills = self.compute_kills(episode_infos_history)
@@ -390,6 +392,7 @@ class MultiAgentTrainer:
             "std_episode_reward": std_episode_reward,
             "total_agent_collisions_per_episode": total_agent_collisions,
             "total_charges_per_episode": total_charges,
+            "total_non_home_charges_per_episode": total_non_home_charges,
             "total_kills_per_episode": total_kills,
             "mean_final_energy": mean_final_energy,
             "epsilon": current_epsilon,

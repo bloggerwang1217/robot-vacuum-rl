@@ -116,6 +116,8 @@ class RobotVacuumEnv:
                 'energy': self.initial_energy,
                 'is_active': True,
                 'charge_count': 0,
+                'non_home_charge_count': 0,  # 在非初始充電座充電的次數
+                'home_charger': (y, x),  # 記錄機器人的初始充電座位置
                 'agent_collision_count': 0,  # 與其他機器人碰撞次數
                 'collided_with_agent_id': None  # 本回合碰撞的對象 (用於 kill 分析)
             }
@@ -179,6 +181,11 @@ class RobotVacuumEnv:
                     # 在充電座上，進行充電
                     robot['energy'] += self.e_charge
                     robot['charge_count'] += 1
+
+                    # 檢查是否在非初始充電座充電
+                    current_pos = (robot['y'], robot['x'])
+                    if current_pos != robot['home_charger']:
+                        robot['non_home_charge_count'] += 1
                 # 如果不在充電座上，不消耗能量
             else:
                 # 移動動作
