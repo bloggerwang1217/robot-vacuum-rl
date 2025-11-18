@@ -240,34 +240,31 @@ class MultiAgentTrainer:
         """
         Compute the number of "kills" in this episode
 
-        Definition: Immediate kill - robot dies in the same timestep as the collision
+        Definition: Robot A collides with robot B at time t, and robot B dies within t+1 to t+5
 
-        Since collision and death checking happen in the same step in the environment,
-        if a collision is fatal, the victim's is_dead flag will be True in the same
-        timestep where the attacker's collided_with_agent_id points to the victim.
-
-        Important: Each robot can only die once, so max kills = number of robots
+        Important: Only count as a kill if the collision target was ALIVE at the time of collision
 
         Args:
             episode_infos: Infos records for the entire episode (infos dict at each step)
 
         Returns:
-            Total number of immediate kills
+            Total number of kills
         """
         kills = 0
-        dead_robots = set()  # Track which robots have died to avoid double-counting
 
-        # Check each timestep for immediate kills
-        for infos in episode_infos:
-            # Check all agent collisions in this timestep
-            for attacker_id in self.agent_ids:
-                victim_id = infos[attacker_id].get('collided_with_agent_id', None)
+        for t, infos in enumerate(episode_infos):
+            for agent_id in self.agent_ids:
+                collision_target = infos[agent_id].get('collided_with_agent_id', None)
 
-                if victim_id is not None:
-                    # Check if victim died in this same timestep and hasn't been counted
-                    if infos[victim_id].get('is_dead', False) and victim_id not in dead_robots:
-                        dead_robots.add(victim_id)
-                        kills += 1
+                if collision_target is not None:
+                    # Check if the collision target was alive at the time of collision
+                    if not infos[collision_target].get('is_dead', False):
+                        # Check if collision target dies within next 5 steps
+                        for future_t in range(t + 1, min(t + 6, len(episode_infos))):
+                            future_info = episode_infos[future_t][collision_target]
+                            if future_info.get('is_dead', False):
+                                kills += 1
+                                break  # Count only once per collision event
 
         return kills
 
