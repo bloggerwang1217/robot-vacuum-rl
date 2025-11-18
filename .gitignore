@@ -22,6 +22,8 @@ wheels/
 
 # Training and validation
 wandb/
+.playwright-mcp
+.claude
 
 # Virtual Environment
 venv/
@@ -47,3 +49,9 @@ Thumbs.db
 
 # Pygame
 *.log
+
+# Models and Training Data
+*.pt
+models/
+analysis_output/
+*.html

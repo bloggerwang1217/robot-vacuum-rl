@@ -49,7 +49,7 @@ class ModelEvaluator:
         self.agent_ids = ['robot_0', 'robot_1', 'robot_2', 'robot_3']
         self.agents = {}
 
-        observation_dim = 29  # According to PLAN.md 2.3.1
+        observation_dim = 20  # Actual observation dimension used in training
         action_dim = 5  # UP, DOWN, LEFT, RIGHT, STAY
 
         # Create a dummy args object for agent initialization
@@ -58,7 +58,9 @@ class ModelEvaluator:
             epsilon=args.eval_epsilon,  # Use low epsilon for evaluation
             batch_size=32,
             lr=0.0001,
-            memory_size=10000
+            memory_size=10000,
+            use_epsilon_decay=False,  # No epsilon decay during evaluation
+            save_dir='.'  # Dummy save directory
         )
 
         for agent_id in self.agent_ids:
