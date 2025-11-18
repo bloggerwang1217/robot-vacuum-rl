@@ -56,9 +56,9 @@ for ((i=0; i<${#configs[@]}; i++)); do
   # 執行訓練
   python3 "$SCRIPT_DIR/train_dqn.py" \
     $config_params \
-    --num-episodes 10000 \
+    --num-episodes 2000 \
     --save-dir "$run_dir" \
-    --save-frequency 1000 \
+    --save-frequency 100 \
     --wandb-entity lazyhao-national-taiwan-university \
     --wandb-project robot-vacuum-rl \
     --wandb-run-name "$config_name" \

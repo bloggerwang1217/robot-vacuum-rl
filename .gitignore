@@ -21,7 +21,6 @@ wheels/
 *.egg
 
 # Training and validation
-models/
 wandb/
 
 # Virtual Environment
