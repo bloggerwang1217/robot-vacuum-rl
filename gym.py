@@ -253,6 +253,7 @@ class RobotVacuumGymEnv:
                 'is_dead': not robot['is_active'],  # For kill analysis
                 'charge_count': robot['charge_count'],  # Keep for backwards compatibility
                 'total_charges': robot['charge_count'],  # Cumulative charges (same as charge_count)
+                'total_non_home_charges': robot['non_home_charge_count'],  # Cumulative non-home charges
                 'total_agent_collisions': robot['agent_collision_count'],  # Cumulative agent collisions
                 'collided_with_agent_id': collided_with,  # For kill analysis (converted to agent_id string)
                 'step': state['current_step']
