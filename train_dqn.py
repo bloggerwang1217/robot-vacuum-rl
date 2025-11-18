@@ -240,31 +240,43 @@ class MultiAgentTrainer:
         """
         Compute the number of "kills" in this episode
 
-        Definition: Robot A collides with robot B at time t, and robot B dies within t+1 to t+5
+        Definition: Count each robot death once, crediting the robot that collided with it
+        within 5 steps before death (most recent collision gets credit)
 
-        Important: Only count as a kill if the collision target was ALIVE at the time of collision
+        Important: Each robot can only die once, so max kills = number of robots
 
         Args:
             episode_infos: Infos records for the entire episode (infos dict at each step)
 
         Returns:
-            Total number of kills
+            Total number of kills (unique robot deaths attributed to collisions)
         """
         kills = 0
+        dead_robots = set()  # Track which robots have died to avoid double-counting
 
+        # Find all deaths and attribute them to the last collision within 5 steps
         for t, infos in enumerate(episode_infos):
             for agent_id in self.agent_ids:
-                collision_target = infos[agent_id].get('collided_with_agent_id', None)
+                # Check if this robot just died and hasn't been counted yet
+                if infos[agent_id].get('is_dead', False) and agent_id not in dead_robots:
+                    dead_robots.add(agent_id)
 
-                if collision_target is not None:
-                    # Check if the collision target was alive at the time of collision
-                    if not infos[collision_target].get('is_dead', False):
-                        # Check if collision target dies within next 5 steps
-                        for future_t in range(t + 1, min(t + 6, len(episode_infos))):
-                            future_info = episode_infos[future_t][collision_target]
-                            if future_info.get('is_dead', False):
-                                kills += 1
-                                break  # Count only once per collision event
+                    # Look back up to 5 steps to find the most recent collision
+                    for lookback in range(min(5, t), -1, -1):
+                        past_t = t - lookback
+                        past_infos = episode_infos[past_t]
+
+                        # Check all agents to see who collided with this now-dead robot
+                        for other_agent_id in self.agent_ids:
+                            if other_agent_id != agent_id:
+                                collision_target = past_infos[other_agent_id].get('collided_with_agent_id', None)
+                                if collision_target == agent_id:
+                                    # Found a collision within 5 steps before death
+                                    kills += 1
+                                    break  # Count this death once, exit inner loop
+                        else:
+                            continue  # Continue lookback if no collision found
+                        break  # Exit lookback loop once we found a collision
 
         return kills
 
