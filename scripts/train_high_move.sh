@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# 機器人吸塵器 RL 批次訓練腳本（恢復模式）
-# 從第三個配置開始執行
+# 機器人吸塵器 RL 批次訓練腳本
+# 使用 epsilon decay 訓練高移動成本配置
 
 set -e
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-MODELS_DIR="${SCRIPT_DIR}/models/batch_training_$(date +%Y%m%d_%H%M%S)"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
+MODELS_DIR="${SCRIPT_DIR}/models/high_move_$(date +%Y%m%d_%H%M%S)"
 
 echo "=========================================="
-echo "機器人吸塵器強化學習 - 批次訓練（恢復）"
+echo "機器人吸塵器強化學習 - 高移動成本 Epsilon Decay 訓練"
 echo "=========================================="
 echo "開始時間: $(date)"
 echo "模型儲存目錄: $MODELS_DIR"
@@ -18,22 +18,19 @@ echo ""
 
 # 定義訓練配置
 declare -a configs=(
-  "collision-10-energy-150|--e-collision 10 --initial-energy 150"
-  "collision-50-energy-100-epsilon-0|--e-collision 50 --initial-energy 100 --epsilon 0"
-  "collision-50-energy-100-epsilon-0.5|--e-collision 50 --initial-energy 100 --epsilon 0.5"
-  "collision-50-energy-100-epsilon-1.0|--e-collision 50 --initial-energy 100 --epsilon 1.0"
-  "collision-50-energy-100-gamma-0|--e-collision 50 --initial-energy 100 --gamma 0"
-  "collision-10-energy-200-epsilon-0.3|--e-collision 10 --initial-energy 200 --epsilon 0.3"
+  "move-10-collision-50-energy-100-epsilon-decay|--e-move 10 --e-collision 50 --initial-energy 100 --use-epsilon-decay"
+  "move-25-collision-50-energy-100-epsilon-decay|--e-move 25 --e-collision 50 --initial-energy 100 --use-epsilon-decay"
+  "move-50-collision-50-energy-100-epsilon-decay|--e-move 50 --e-collision 50 --initial-energy 100 --use-epsilon-decay"
+  "move-10-collision-50-energy-150-epsilon-decay|--e-move 10 --e-collision 50 --initial-energy 150 --use-epsilon-decay"
+  "move-50-collision-50-energy-150-epsilon-decay|--e-move 50 --e-collision 50 --initial-energy 150 --use-epsilon-decay"
 )
 
-# 從第三個開始（索引 2）
-start_index=2
 total_configs=${#configs[@]}
-echo "從第 $((start_index+1))/6 個配置開始執行（跳過前 2 個已完成的）"
+echo "共有 $total_configs 個訓練配置（使用 epsilon decay）"
 echo ""
 
 # 遍歷每個配置並執行訓練
-for ((i=start_index; i<${#configs[@]}; i++)); do
+for ((i=0; i<${#configs[@]}; i++)); do
   config="${configs[$i]}"
   config_name="${config%|*}"
   config_params="${config#*|}"
