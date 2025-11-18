@@ -268,6 +268,57 @@ class MultiAgentTrainer:
 
         return kills
 
+    def compute_immediate_kills(self, episode_infos: List[Dict]) -> int:
+        """
+        Compute the number of "immediate kills" in this episode
+
+        Definition: Robot A collides with robot B at time t, and at time t+1:
+        - Exactly one of them dies (the other survives)
+        - If both die, it does not count
+
+        Args:
+            episode_infos: Infos records for the entire episode (infos dict at each step)
+
+        Returns:
+            Total number of immediate kills
+        """
+        immediate_kills = 0
+        counted_pairs = set()  # Track counted collision pairs to avoid double counting
+
+        for t, infos in enumerate(episode_infos):
+            # Check if there's a next step
+            if t + 1 >= len(episode_infos):
+                break
+
+            next_infos = episode_infos[t + 1]
+
+            for agent_id in self.agent_ids:
+                collision_target = infos[agent_id].get('collided_with_agent_id', None)
+
+                if collision_target is not None:
+                    # Create a canonical pair identifier (sorted to avoid duplicates)
+                    pair = tuple(sorted([agent_id, collision_target]))
+
+                    # Skip if we've already counted this collision pair at this timestep
+                    if (t, pair) in counted_pairs:
+                        continue
+
+                    # Check both agents were alive at time t
+                    agent_alive_at_t = not infos[agent_id].get('is_dead', False)
+                    target_alive_at_t = not infos[collision_target].get('is_dead', False)
+
+                    if agent_alive_at_t and target_alive_at_t:
+                        # Check status at time t+1
+                        agent_alive_at_t1 = not next_infos[agent_id].get('is_dead', False)
+                        target_alive_at_t1 = not next_infos[collision_target].get('is_dead', False)
+
+                        # Count as immediate kill if exactly one dies
+                        if agent_alive_at_t1 != target_alive_at_t1:
+                            immediate_kills += 1
+                            counted_pairs.add((t, pair))
+
+        return immediate_kills
+
     def train(self):
         """Main training loop"""
         for episode in range(self.args.num_episodes):
@@ -379,6 +430,7 @@ class MultiAgentTrainer:
 
         # Compute kills
         total_kills = self.compute_kills(episode_infos_history)
+        total_immediate_kills = self.compute_immediate_kills(episode_infos_history)
 
         # Get current epsilon from first agent (all agents have same epsilon)
         current_epsilon = self.agents['robot_0'].epsilon
@@ -394,6 +446,7 @@ class MultiAgentTrainer:
             "total_charges_per_episode": total_charges,
             "total_non_home_charges_per_episode": total_non_home_charges,
             "total_kills_per_episode": total_kills,
+            "total_immediate_kills_per_episode": total_immediate_kills,
             "mean_final_energy": mean_final_energy,
             "epsilon": current_epsilon,
             "global_step": self.global_step
@@ -402,7 +455,7 @@ class MultiAgentTrainer:
         # Print summary
         print(f"[Episode {episode}] Steps: {step_count} | Survival: {survival_count}/4 | "
               f"Mean Reward: {mean_episode_reward:.2f} | Collisions: {total_agent_collisions} | "
-              f"Kills: {total_kills}")
+              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills}")
 
     def check_and_save_key_models(self, episode: int, episode_infos_history: List[Dict]):
         """
