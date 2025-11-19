@@ -455,7 +455,8 @@ class MultiAgentTrainer:
         # Print summary
         print(f"[Episode {episode}] Steps: {step_count} | Survival: {survival_count}/4 | "
               f"Mean Reward: {mean_episode_reward:.2f} | Collisions: {total_agent_collisions} | "
-              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills}")
+              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills} | "
+              f"Non-Home Charges: {total_non_home_charges}")
 
     def check_and_save_key_models(self, episode: int, episode_infos_history: List[Dict]):
         """

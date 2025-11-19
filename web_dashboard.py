@@ -24,9 +24,11 @@ import plotly.offline as pyo
 class TrainingDataLoader:
     """Load and parse all training logs from a directory"""
 
-    def __init__(self, models_dir: str):
+    def __init__(self, models_dir: str, wandb_dir: str = None):
         self.models_dir = Path(models_dir)
+        self.wandb_dir = Path(wandb_dir) if wandb_dir else None
         self.runs_data = []
+        self.wandb_data = {}
 
     def load_all_runs(self) -> pd.DataFrame:
         """Find and parse all training.log files"""
@@ -39,9 +41,17 @@ class TrainingDataLoader:
             if run_data is not None:
                 self.runs_data.append(run_data)
 
+        # Load WandB data if directory is provided
+        if self.wandb_dir and self.wandb_dir.exists():
+            self._load_wandb_data()
+
         # Combine all runs into a single DataFrame
         if self.runs_data:
-            return pd.concat(self.runs_data, ignore_index=True)
+            df = pd.concat(self.runs_data, ignore_index=True)
+            # Merge WandB data if available
+            if self.wandb_data:
+                df = self._merge_wandb_data(df)
+            return df
         else:
             return pd.DataFrame()
 
@@ -54,14 +64,15 @@ class TrainingDataLoader:
 
         # Parse episode data
         episode_data = []
-        episode_pattern = r'\[Episode (\d+)\] Steps: (\d+) \| Survival: (\d+)/\d+ \| Mean Reward: ([-\d.]+) \| Collisions: (\d+) \| Kills: (\d+)'
+        # Pattern with optional Non-Home Charges for backward compatibility
+        episode_pattern = r'\[Episode (\d+)\] Steps: (\d+) \| Survival: (\d+)/\d+ \| Mean Reward: ([-\d.]+) \| Collisions: (\d+) \| Kills: (\d+)(?: \| Immediate Kills: (\d+))?(?: \| Non-Home Charges: (\d+))?'
 
         try:
             with open(log_file, 'r') as f:
                 for line in f:
                     match = re.search(episode_pattern, line)
                     if match:
-                        episode, steps, survival, reward, collisions, kills = match.groups()
+                        episode, steps, survival, reward, collisions, kills, immediate_kills, non_home_charges = match.groups()
                         episode_data.append({
                             'episode': int(episode),
                             'steps': int(steps),
@@ -69,6 +80,8 @@ class TrainingDataLoader:
                             'reward': float(reward),
                             'collisions': int(collisions),
                             'kills': int(kills),
+                            'immediate_kills': int(immediate_kills) if immediate_kills else 0,
+                            'non_home_charges': int(non_home_charges) if non_home_charges else 0,
                             'config': config_name,
                             **params
                         })
@@ -120,6 +133,46 @@ class TrainingDataLoader:
 
         return params
 
+    def _load_wandb_data(self):
+        """Load WandB CSV files"""
+        print(f"\nLoading WandB data from {self.wandb_dir}...")
+        csv_files = list(self.wandb_dir.glob("*.csv"))
+        print(f"Found {len(csv_files)} WandB CSV files")
+
+        for csv_file in csv_files:
+            config_name = csv_file.stem  # filename without .csv
+            try:
+                df = pd.read_csv(csv_file)
+                # Only keep relevant columns
+                if 'episode' in df.columns and 'total_non_home_charges_per_episode' in df.columns:
+                    wandb_df = df[['episode', 'total_non_home_charges_per_episode']].dropna()
+                    if not wandb_df.empty:
+                        self.wandb_data[config_name] = wandb_df
+                        print(f"  Loaded {len(wandb_df)} episodes from {config_name}")
+            except Exception as e:
+                print(f"  Error loading {csv_file}: {e}")
+
+    def _merge_wandb_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Merge WandB non_home_charges data into the main dataframe"""
+        print("\nMerging WandB data with training logs...")
+
+        for config in df['config'].unique():
+            if config in self.wandb_data:
+                wandb_df = self.wandb_data[config]
+                # Update non_home_charges for matching episodes
+                for _, row in wandb_df.iterrows():
+                    episode_num = int(row['episode'])
+                    non_home_charges = row['total_non_home_charges_per_episode']
+
+                    # Update the corresponding row in main df
+                    mask = (df['config'] == config) & (df['episode'] == episode_num)
+                    if mask.any():
+                        df.loc[mask, 'non_home_charges'] = non_home_charges
+
+                print(f"  Merged {len(wandb_df)} episodes for {config}")
+
+        return df
+
 
 class HTMLDashboardGenerator:
     """Generate standalone HTML dashboard with interactive plots"""
@@ -145,6 +198,7 @@ class HTMLDashboardGenerator:
         plots.append(self._create_metric_plot('steps', 'Episode Length'))
         plots.append(self._create_metric_plot('collisions', 'Agent Collisions'))
         plots.append(self._create_metric_plot('kills', 'Kills per Episode'))
+        plots.append(self._create_metric_plot('non_home_charges', 'Non-Home Charges per Episode'))
 
         # Scatter matrix - moved before hyperparameter impact
         plots.append(self._create_scatter_matrix())
@@ -527,6 +581,8 @@ def main():
 
     parser.add_argument("--models-dir", type=str, default="./models",
                        help="Directory containing training logs")
+    parser.add_argument("--wandb-dir", type=str, default="./wandb_data",
+                       help="Directory containing WandB CSV exports")
     parser.add_argument("--output", type=str, default="training_dashboard.html",
                        help="Output HTML file path")
 
@@ -534,7 +590,7 @@ def main():
 
     # Load data
     print(f"Loading training data from {args.models_dir}...")
-    loader = TrainingDataLoader(args.models_dir)
+    loader = TrainingDataLoader(args.models_dir, args.wandb_dir)
     df = loader.load_all_runs()
 
     if df.empty:
