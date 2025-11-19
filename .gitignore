@@ -52,6 +52,5 @@ Thumbs.db
 
 # Models and Training Data
 *.pt
-models/
 analysis_output/
 *.html
