@@ -515,11 +515,8 @@ class MultiAgentTrainer:
         # Print summary with totals
         print(f"[Episode {episode}] Steps: {step_count} | Survival: {survival_count}/4 | "
               f"Mean Reward: {mean_episode_reward:.2f} | Collisions: {total_agent_collisions} | "
-<<<<<<< Updated upstream
               f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills} | "
               f"Non-Home Charges: {total_non_home_charges}")
-=======
-              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills}")
         
         # Print per-agent breakdown
         print(f"  Per-Agent Metrics:")
@@ -531,7 +528,6 @@ class MultiAgentTrainer:
                   f"Kills={per_agent_kills[agent_id]}, "
                   f"ImmediateKills={per_agent_immediate_kills[agent_id]}, "
                   f"CumulativeDeaths={self.cumulative_deaths[agent_id]}")
->>>>>>> Stashed changes
 
     def check_and_save_key_models(self, episode: int, episode_infos_history: List[Dict]):
         """
