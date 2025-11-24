@@ -53,7 +53,8 @@ class RobotVacuumEnv:
         Args:
             config: 配置字典，包含以下參數：
                 - n: 房間大小 (n × n)，預設 3
-                - initial_energy: 機器人初始能量
+                - initial_energy: 機器人初始能量 (統一設定)
+                - robot_energies: 個別機器人初始能量列表 [robot_0, robot_1, robot_2, robot_3]
                 - e_move: 移動消耗的能量
                 - e_charge: 充電增加的能量
                 - e_collision: 碰撞消耗的能量
@@ -63,6 +64,8 @@ class RobotVacuumEnv:
         # 儲存配置參數
         self.n = config.get('n', 3)  # 預設 3x3
         self.initial_energy = config['initial_energy']
+        # 支援個別機器人血量或統一血量
+        self.robot_energies = config.get('robot_energies', [self.initial_energy] * 4)
         self.e_move = config['e_move']
         self.e_charge = config['e_charge']
         self.e_collision = config['e_collision']
@@ -113,7 +116,8 @@ class RobotVacuumEnv:
                 'id': i,
                 'x': x,
                 'y': y,
-                'energy': self.initial_energy,
+                'energy': self.robot_energies[i],  # 使用個別血量
+                'max_energy': self.robot_energies[i],  # 記錄最大血量
                 'is_active': True,
                 'charge_count': 0,
                 'non_home_charge_count': 0,  # 在非初始充電座充電的次數
@@ -233,8 +237,8 @@ class RobotVacuumEnv:
 
         # 4. 更新關機狀態
         for robot in self.robots:
-            # 能量不超過上限，不低於0
-            robot['energy'] = max(0, min(self.initial_energy, robot['energy']))
+            # 能量不超過上限，不低於0（使用機器人的最大血量）
+            robot['energy'] = max(0, min(robot['max_energy'], robot['energy']))
 
             # 如果能量耗盡，設為非活躍
             if robot['energy'] <= 0:
@@ -387,7 +391,7 @@ class RobotVacuumEnv:
 
             # 能量文字
             energy_text = font_text.render(
-                f'Energy: {robot["energy"]}/{self.initial_energy}',
+                f'Energy: {robot["energy"]}/{robot["max_energy"]}',
                 True,
                 (255, 255, 255)
             )
@@ -397,7 +401,7 @@ class RobotVacuumEnv:
             # 能量條圖形
             bar_width = panel_width - 50
             bar_height = 28
-            energy_ratio = robot['energy'] / self.initial_energy
+            energy_ratio = robot['energy'] / robot['max_energy']
 
             # 背景條
             pygame.draw.rect(

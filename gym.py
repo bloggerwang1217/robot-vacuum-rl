@@ -24,13 +24,20 @@ class RobotVacuumGymEnv:
 
         Args:
             config: 環境配置字典 (可選)
-            **kwargs: 或者使用關鍵字參數 (n, initial_energy, e_move, e_charge, e_collision, n_steps)
+            **kwargs: 或者使用關鍵字參數 (n, initial_energy, robot_energies, e_move, e_charge, e_collision, n_steps)
         """
         # 支援兩種初始化方式
         if config is None:
+            initial_energy = kwargs.get('initial_energy', 100)
+            robot_energies = kwargs.get('robot_energies', None)
+            # 如果沒有指定個別血量，使用統一血量
+            if robot_energies is None:
+                robot_energies = [initial_energy] * 4
+            
             config = {
                 'n': kwargs.get('n', 3),
-                'initial_energy': kwargs.get('initial_energy', 100),
+                'initial_energy': initial_energy,
+                'robot_energies': robot_energies,
                 'e_move': kwargs.get('e_move', 1),
                 'e_charge': kwargs.get('e_charge', 5),
                 'e_collision': kwargs.get('e_collision', 3),

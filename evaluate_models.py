@@ -34,10 +34,19 @@ class ModelEvaluator:
             self.device = torch.device("cpu")
         print(f"Using device: {self.device}")
 
+        # Prepare individual robot energies
+        robot_energies = [
+            args.robot_0_energy if args.robot_0_energy is not None else args.initial_energy,
+            args.robot_1_energy if args.robot_1_energy is not None else args.initial_energy,
+            args.robot_2_energy if args.robot_2_energy is not None else args.initial_energy,
+            args.robot_3_energy if args.robot_3_energy is not None else args.initial_energy,
+        ]
+
         # Environment with rendering
         self.env = RobotVacuumGymEnv(
             n=args.env_n,
             initial_energy=args.initial_energy,
+            robot_energies=robot_energies,
             e_move=args.e_move,
             e_charge=args.e_charge,
             e_collision=args.e_collision,
@@ -282,7 +291,11 @@ def main():
 
     # Environment parameters (should match training config)
     parser.add_argument("--env-n", type=int, default=3, help="Environment grid size (n×n)")
-    parser.add_argument("--initial-energy", type=int, default=100, help="Initial energy for robots")
+    parser.add_argument("--initial-energy", type=int, default=100, help="Initial energy for all robots (used if individual energies not specified)")
+    parser.add_argument("--robot-0-energy", type=int, default=None, help="Initial energy for robot 0")
+    parser.add_argument("--robot-1-energy", type=int, default=None, help="Initial energy for robot 1")
+    parser.add_argument("--robot-2-energy", type=int, default=None, help="Initial energy for robot 2")
+    parser.add_argument("--robot-3-energy", type=int, default=None, help="Initial energy for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision")

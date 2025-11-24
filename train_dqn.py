@@ -196,10 +196,19 @@ class MultiAgentTrainer:
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
 
+        # Prepare individual robot energies
+        robot_energies = [
+            args.robot_0_energy if args.robot_0_energy is not None else args.initial_energy,
+            args.robot_1_energy if args.robot_1_energy is not None else args.initial_energy,
+            args.robot_2_energy if args.robot_2_energy is not None else args.initial_energy,
+            args.robot_3_energy if args.robot_3_energy is not None else args.initial_energy,
+        ]
+
         # Environment
         self.env = RobotVacuumGymEnv(
             n=args.env_n,
             initial_energy=args.initial_energy,
+            robot_energies=robot_energies,
             e_move=args.e_move,
             e_charge=args.e_charge,
             e_collision=args.e_collision,
@@ -225,6 +234,9 @@ class MultiAgentTrainer:
         # Training counters
         self.global_step = 0
         self.episode_count = 0
+
+        # Cumulative death counter for each robot
+        self.cumulative_deaths = {agent_id: 0 for agent_id in self.agent_ids}
 
         # Model saving
         self.save_dir = args.save_dir
@@ -459,6 +471,14 @@ class MultiAgentTrainer:
         # 5. Immediate kills
         total_immediate_kills, per_agent_immediate_kills = self.compute_immediate_kills(episode_infos_history)
 
+        # 6. Update cumulative deaths and get per-episode deaths
+        per_agent_deaths = {}
+        for agent_id in self.agent_ids:
+            is_dead = final_infos.get(agent_id, {}).get('is_dead', False)
+            if is_dead:
+                self.cumulative_deaths[agent_id] += 1
+            per_agent_deaths[agent_id] = 1 if is_dead else 0
+
         # Get current epsilon from first agent (all agents have same epsilon)
         current_epsilon = self.agents['robot_0'].epsilon
 
@@ -486,6 +506,8 @@ class MultiAgentTrainer:
             log_dict[f"{agent_id}/non_home_charges_per_episode"] = per_agent_non_home_charges[agent_id]
             log_dict[f"{agent_id}/kills_per_episode"] = per_agent_kills[agent_id]
             log_dict[f"{agent_id}/immediate_kills_per_episode"] = per_agent_immediate_kills[agent_id]
+            log_dict[f"{agent_id}/deaths_per_episode"] = per_agent_deaths[agent_id]
+            log_dict[f"{agent_id}/cumulative_deaths"] = self.cumulative_deaths[agent_id]
         
         # Log to wandb
         wandb.log(log_dict)
@@ -502,11 +524,13 @@ class MultiAgentTrainer:
         # Print per-agent breakdown
         print(f"  Per-Agent Metrics:")
         for agent_id in self.agent_ids:
-            print(f"    {agent_id}: Collisions={per_agent_collisions[agent_id]}, "
+            death_marker = " 💀" if per_agent_deaths[agent_id] == 1 else ""
+            print(f"    {agent_id}{death_marker}: Collisions={per_agent_collisions[agent_id]}, "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
                   f"Kills={per_agent_kills[agent_id]}, "
-                  f"ImmediateKills={per_agent_immediate_kills[agent_id]}")
+                  f"ImmediateKills={per_agent_immediate_kills[agent_id]}, "
+                  f"CumulativeDeaths={self.cumulative_deaths[agent_id]}")
 >>>>>>> Stashed changes
 
     def check_and_save_key_models(self, episode: int, episode_infos_history: List[Dict]):
@@ -547,7 +571,11 @@ def main():
 
     # Environment parameters
     parser.add_argument("--env-n", type=int, default=3, help="Environment grid size (n×n)")
-    parser.add_argument("--initial-energy", type=int, default=100, help="Initial energy for robots")
+    parser.add_argument("--initial-energy", type=int, default=100, help="Initial energy for all robots (used if individual energies not specified)")
+    parser.add_argument("--robot-0-energy", type=int, default=None, help="Initial energy for robot 0")
+    parser.add_argument("--robot-1-energy", type=int, default=None, help="Initial energy for robot 1")
+    parser.add_argument("--robot-2-energy", type=int, default=None, help="Initial energy for robot 2")
+    parser.add_argument("--robot-3-energy", type=int, default=None, help="Initial energy for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision")
