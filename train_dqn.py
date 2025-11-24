@@ -236,7 +236,7 @@ class MultiAgentTrainer:
         # Best model tracking
         self.best_metric = float('-inf')
 
-    def compute_kills(self, episode_infos: List[Dict]) -> int:
+    def compute_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
         """
         Compute the number of "kills" in this episode
 
@@ -248,9 +248,10 @@ class MultiAgentTrainer:
             episode_infos: Infos records for the entire episode (infos dict at each step)
 
         Returns:
-            Total number of kills
+            Tuple of (total_kills, per_agent_kills_dict)
         """
         kills = 0
+        per_agent_kills = {agent_id: 0 for agent_id in self.agent_ids}
 
         for t, infos in enumerate(episode_infos):
             for agent_id in self.agent_ids:
@@ -264,11 +265,12 @@ class MultiAgentTrainer:
                             future_info = episode_infos[future_t][collision_target]
                             if future_info.get('is_dead', False):
                                 kills += 1
+                                per_agent_kills[agent_id] += 1
                                 break  # Count only once per collision event
 
-        return kills
+        return kills, per_agent_kills
 
-    def compute_immediate_kills(self, episode_infos: List[Dict]) -> int:
+    def compute_immediate_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
         """
         Compute the number of "immediate kills" in this episode
 
@@ -280,9 +282,10 @@ class MultiAgentTrainer:
             episode_infos: Infos records for the entire episode (infos dict at each step)
 
         Returns:
-            Total number of immediate kills
+            Tuple of (total_immediate_kills, per_agent_immediate_kills_dict)
         """
         immediate_kills = 0
+        per_agent_immediate_kills = {agent_id: 0 for agent_id in self.agent_ids}
         counted_pairs = set()  # Track counted collision pairs to avoid double counting
 
         for t, infos in enumerate(episode_infos):
@@ -316,8 +319,13 @@ class MultiAgentTrainer:
                         if agent_alive_at_t1 != target_alive_at_t1:
                             immediate_kills += 1
                             counted_pairs.add((t, pair))
+                            # Attribute to the survivor
+                            if agent_alive_at_t1:
+                                per_agent_immediate_kills[agent_id] += 1
+                            else:
+                                per_agent_immediate_kills[collision_target] += 1
 
-        return immediate_kills
+        return immediate_kills, per_agent_immediate_kills
 
     def train(self):
         """Main training loop"""
@@ -420,23 +428,42 @@ class MultiAgentTrainer:
                          for agent_id in self.agent_ids]
         mean_final_energy = np.mean(final_energies)
 
-        # Compute total collisions and total charges
-        total_agent_collisions = sum(final_infos.get(agent_id, {}).get('total_agent_collisions', 0)
-                                     for agent_id in self.agent_ids)
-        total_charges = sum(final_infos.get(agent_id, {}).get('total_charges', 0)
-                           for agent_id in self.agent_ids)
-        total_non_home_charges = sum(final_infos.get(agent_id, {}).get('total_non_home_charges', 0)
-                                     for agent_id in self.agent_ids)
+        # Compute total and per-agent metrics
+        # 1. Collisions
+        per_agent_collisions = {}
+        total_agent_collisions = 0
+        for agent_id in self.agent_ids:
+            collisions = final_infos.get(agent_id, {}).get('total_agent_collisions', 0)
+            per_agent_collisions[agent_id] = collisions
+            total_agent_collisions += collisions
+        
+        # 2. Charges
+        per_agent_charges = {}
+        total_charges = 0
+        for agent_id in self.agent_ids:
+            charges = final_infos.get(agent_id, {}).get('total_charges', 0)
+            per_agent_charges[agent_id] = charges
+            total_charges += charges
+        
+        # 3. Non-home charges
+        per_agent_non_home_charges = {}
+        total_non_home_charges = 0
+        for agent_id in self.agent_ids:
+            non_home_charges = final_infos.get(agent_id, {}).get('total_non_home_charges', 0)
+            per_agent_non_home_charges[agent_id] = non_home_charges
+            total_non_home_charges += non_home_charges
 
-        # Compute kills
-        total_kills = self.compute_kills(episode_infos_history)
-        total_immediate_kills = self.compute_immediate_kills(episode_infos_history)
+        # 4. Kills
+        total_kills, per_agent_kills = self.compute_kills(episode_infos_history)
+        
+        # 5. Immediate kills
+        total_immediate_kills, per_agent_immediate_kills = self.compute_immediate_kills(episode_infos_history)
 
         # Get current epsilon from first agent (all agents have same epsilon)
         current_epsilon = self.agents['robot_0'].epsilon
 
-        # Log to wandb
-        wandb.log({
+        # Prepare wandb log dict
+        log_dict = {
             "episode": episode,
             "episode_length": step_count,
             "survival_rate": survival_count,
@@ -450,13 +477,37 @@ class MultiAgentTrainer:
             "mean_final_energy": mean_final_energy,
             "epsilon": current_epsilon,
             "global_step": self.global_step
-        })
+        }
+        
+        # Add per-agent metrics to wandb
+        for agent_id in self.agent_ids:
+            log_dict[f"{agent_id}/collisions_per_episode"] = per_agent_collisions[agent_id]
+            log_dict[f"{agent_id}/charges_per_episode"] = per_agent_charges[agent_id]
+            log_dict[f"{agent_id}/non_home_charges_per_episode"] = per_agent_non_home_charges[agent_id]
+            log_dict[f"{agent_id}/kills_per_episode"] = per_agent_kills[agent_id]
+            log_dict[f"{agent_id}/immediate_kills_per_episode"] = per_agent_immediate_kills[agent_id]
+        
+        # Log to wandb
+        wandb.log(log_dict)
 
-        # Print summary
+        # Print summary with totals
         print(f"[Episode {episode}] Steps: {step_count} | Survival: {survival_count}/4 | "
               f"Mean Reward: {mean_episode_reward:.2f} | Collisions: {total_agent_collisions} | "
+<<<<<<< Updated upstream
               f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills} | "
               f"Non-Home Charges: {total_non_home_charges}")
+=======
+              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills}")
+        
+        # Print per-agent breakdown
+        print(f"  Per-Agent Metrics:")
+        for agent_id in self.agent_ids:
+            print(f"    {agent_id}: Collisions={per_agent_collisions[agent_id]}, "
+                  f"Charges={per_agent_charges[agent_id]}, "
+                  f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
+                  f"Kills={per_agent_kills[agent_id]}, "
+                  f"ImmediateKills={per_agent_immediate_kills[agent_id]}")
+>>>>>>> Stashed changes
 
     def check_and_save_key_models(self, episode: int, episode_infos_history: List[Dict]):
         """
@@ -465,7 +516,7 @@ class MultiAgentTrainer:
         Design based on PLAN.md section 4.3
         """
         # Use kills as the key metric for this episode
-        total_kills = self.compute_kills(episode_infos_history)
+        total_kills, _ = self.compute_kills(episode_infos_history)
 
         # Save model if new record is achieved
         if total_kills > self.best_metric:
