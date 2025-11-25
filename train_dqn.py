@@ -508,6 +508,12 @@ class MultiAgentTrainer:
             log_dict[f"{agent_id}/immediate_kills_per_episode"] = per_agent_immediate_kills[agent_id]
             log_dict[f"{agent_id}/deaths_per_episode"] = per_agent_deaths[agent_id]
             log_dict[f"{agent_id}/cumulative_deaths"] = self.cumulative_deaths[agent_id]
+            
+            # Add collided_by metrics
+            log_dict[f"{agent_id}/collided_by_robot_0"] = final_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
+            log_dict[f"{agent_id}/collided_by_robot_1"] = final_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
+            log_dict[f"{agent_id}/collided_by_robot_2"] = final_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
+            log_dict[f"{agent_id}/collided_by_robot_3"] = final_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
         
         # Log to wandb
         wandb.log(log_dict)
@@ -522,12 +528,20 @@ class MultiAgentTrainer:
         print(f"  Per-Agent Metrics:")
         for agent_id in self.agent_ids:
             death_marker = " 💀" if per_agent_deaths[agent_id] == 1 else ""
+            
+            # Get collided_by info
+            collided_by_0 = final_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
+            collided_by_1 = final_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
+            collided_by_2 = final_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
+            collided_by_3 = final_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
+            
             print(f"    {agent_id}{death_marker}: Collisions={per_agent_collisions[agent_id]}, "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
                   f"Kills={per_agent_kills[agent_id]}, "
                   f"ImmediateKills={per_agent_immediate_kills[agent_id]}, "
                   f"CumulativeDeaths={self.cumulative_deaths[agent_id]}")
+            print(f"      CollidedBy: [0→{collided_by_0}, 1→{collided_by_1}, 2→{collided_by_2}, 3→{collided_by_3}]")
 
     def check_and_save_key_models(self, episode: int, episode_infos_history: List[Dict]):
         """

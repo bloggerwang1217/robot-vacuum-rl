@@ -263,6 +263,10 @@ class RobotVacuumGymEnv:
                 'total_non_home_charges': robot['non_home_charge_count'],  # Cumulative non-home charges
                 'total_agent_collisions': robot['agent_collision_count'],  # Cumulative agent collisions
                 'collided_with_agent_id': collided_with,  # For kill analysis (converted to agent_id string)
+                'collided_by_robot_0': robot['collided_by_counts'][0],  # 被 robot 0 碰撞次數
+                'collided_by_robot_1': robot['collided_by_counts'][1],  # 被 robot 1 碰撞次數
+                'collided_by_robot_2': robot['collided_by_counts'][2],  # 被 robot 2 碰撞次數
+                'collided_by_robot_3': robot['collided_by_counts'][3],  # 被 robot 3 碰撞次數
                 'step': state['current_step']
             }
 

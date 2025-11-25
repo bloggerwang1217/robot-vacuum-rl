@@ -123,7 +123,8 @@ class RobotVacuumEnv:
                 'non_home_charge_count': 0,  # 在非初始充電座充電的次數
                 'home_charger': (y, x),  # 記錄機器人的初始充電座位置
                 'agent_collision_count': 0,  # 與其他機器人碰撞次數
-                'collided_with_agent_id': None  # 本回合碰撞的對象 (用於 kill 分析)
+                'collided_with_agent_id': None,  # 本回合碰撞的對象 (用於 kill 分析)
+                'collided_by_counts': {0: 0, 1: 0, 2: 0, 3: 0}  # 被各個機器人碰撞的次數
             }
             self.robots.append(robot)
 
@@ -229,6 +230,10 @@ class RobotVacuumEnv:
                     if collided_agent_id is not None:
                         robot['agent_collision_count'] += 1
                         robot['collided_with_agent_id'] = collided_agent_id
+                        
+                        # 更新被碰撞機器人的計數器（記錄被誰碰撞）
+                        other_robot = self.robots[collided_agent_id]
+                        other_robot['collided_by_counts'][robot['id']] += 1
                 else:
                     # 移動成功
                     robot['x'] = planned_x
