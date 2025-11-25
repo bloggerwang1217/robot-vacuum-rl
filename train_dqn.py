@@ -436,8 +436,12 @@ class MultiAgentTrainer:
         survival_count = sum(1 for agent_id in self.agent_ids
                             if not final_infos.get(agent_id, {}).get('is_dead', False))
 
-        final_energies = [final_infos.get(agent_id, {}).get('energy', 0)
-                         for agent_id in self.agent_ids]
+        # Get per-agent final energies
+        per_agent_energies = {}
+        for agent_id in self.agent_ids:
+            per_agent_energies[agent_id] = final_infos.get(agent_id, {}).get('energy', 0)
+        
+        final_energies = list(per_agent_energies.values())
         mean_final_energy = np.mean(final_energies)
 
         # Compute total and per-agent metrics
@@ -508,6 +512,7 @@ class MultiAgentTrainer:
             log_dict[f"{agent_id}/immediate_kills_per_episode"] = per_agent_immediate_kills[agent_id]
             log_dict[f"{agent_id}/deaths_per_episode"] = per_agent_deaths[agent_id]
             log_dict[f"{agent_id}/cumulative_deaths"] = self.cumulative_deaths[agent_id]
+            log_dict[f"{agent_id}/final_energy"] = per_agent_energies[agent_id]
             
             # Add collided_by metrics
             log_dict[f"{agent_id}/collided_by_robot_0"] = final_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
@@ -535,7 +540,8 @@ class MultiAgentTrainer:
             collided_by_2 = final_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
             collided_by_3 = final_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
             
-            print(f"    {agent_id}{death_marker}: Collisions={per_agent_collisions[agent_id]}, "
+            print(f"    {agent_id}{death_marker}: Energy={per_agent_energies[agent_id]}, "
+                  f"Collisions={per_agent_collisions[agent_id]}, "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
                   f"Kills={per_agent_kills[agent_id]}, "
