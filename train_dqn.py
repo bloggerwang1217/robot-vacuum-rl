@@ -436,10 +436,12 @@ class MultiAgentTrainer:
         survival_count = sum(1 for agent_id in self.agent_ids
                             if not final_infos.get(agent_id, {}).get('is_dead', False))
 
-        # Get per-agent final energies
+        # Get per-agent final energies and positions
         per_agent_energies = {}
+        per_agent_positions = {}
         for agent_id in self.agent_ids:
             per_agent_energies[agent_id] = final_infos.get(agent_id, {}).get('energy', 0)
+            per_agent_positions[agent_id] = final_infos.get(agent_id, {}).get('position', (0, 0))
         
         final_energies = list(per_agent_energies.values())
         mean_final_energy = np.mean(final_energies)
@@ -513,6 +515,8 @@ class MultiAgentTrainer:
             log_dict[f"{agent_id}/deaths_per_episode"] = per_agent_deaths[agent_id]
             log_dict[f"{agent_id}/cumulative_deaths"] = self.cumulative_deaths[agent_id]
             log_dict[f"{agent_id}/final_energy"] = per_agent_energies[agent_id]
+            log_dict[f"{agent_id}/final_position_x"] = per_agent_positions[agent_id][0]
+            log_dict[f"{agent_id}/final_position_y"] = per_agent_positions[agent_id][1]
             
             # Add collided_by metrics
             log_dict[f"{agent_id}/collided_by_robot_0"] = final_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
@@ -540,7 +544,8 @@ class MultiAgentTrainer:
             collided_by_2 = final_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
             collided_by_3 = final_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
             
-            print(f"    {agent_id}{death_marker}: Energy={per_agent_energies[agent_id]}, "
+            pos = per_agent_positions[agent_id]
+            print(f"    {agent_id}{death_marker}: Pos=({pos[0]},{pos[1]}), Energy={per_agent_energies[agent_id]}, "
                   f"Collisions={per_agent_collisions[agent_id]}, "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "

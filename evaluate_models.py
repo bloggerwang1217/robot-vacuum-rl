@@ -1,13 +1,14 @@
 """
 Evaluation Script for Independent DQN Models
-Load trained models and visualize their behavior with pygame rendering
+Load trained models and run long-term simulation to observe emergent behaviors
 """
 
 import torch
 import numpy as np
 import os
 import argparse
-from typing import Dict, List
+import wandb
+from typing import Dict, List, Tuple
 
 # Import the DQN network and agent components
 from dqn import DQN, init_weights
@@ -20,7 +21,7 @@ from gym import RobotVacuumGymEnv
 class ModelEvaluator:
     """
     Evaluator for trained Independent DQN models
-    Loads saved models and runs evaluation episodes with visualization
+    Loads saved models and runs long-term simulation
     """
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -41,8 +42,10 @@ class ModelEvaluator:
             args.robot_2_energy if args.robot_2_energy is not None else args.initial_energy,
             args.robot_3_energy if args.robot_3_energy is not None else args.initial_energy,
         ]
+        self.robot_energies = robot_energies
 
-        # Environment with rendering
+        # Environment setup (render_mode based on args)
+        render_mode = "human" if args.render else None
         self.env = RobotVacuumGymEnv(
             n=args.env_n,
             initial_energy=args.initial_energy,
@@ -50,8 +53,8 @@ class ModelEvaluator:
             e_move=args.e_move,
             e_charge=args.e_charge,
             e_collision=args.e_collision,
-            n_steps=args.max_episode_steps,
-            render_mode="human"  # Enable pygame rendering
+            n_steps=args.max_steps,  # Use max_steps for single long episode
+            render_mode=render_mode
         )
 
         # Initialize agents
@@ -104,186 +107,390 @@ class ModelEvaluator:
 
         print("All models loaded successfully!")
 
-    def evaluate(self, num_episodes: int = 5) -> Dict[str, float]:
+    def evaluate(self) -> Dict[str, float]:
         """
-        Run evaluation episodes with visualization
-
-        Args:
-            num_episodes: Number of episodes to evaluate
+        Run single long-term evaluation episode
 
         Returns:
             Evaluation statistics
         """
-        all_episode_stats = []
+        print(f"\n{'=' * 60}")
+        print(f"Starting Long-Term Simulation")
+        print(f"Max Steps: {self.args.max_steps}")
+        print(f"Robot Energies: {self.robot_energies}")
+        print(f"Eval Epsilon: {self.args.eval_epsilon}")
+        print(f"{'=' * 60}\n")
 
-        for episode in range(num_episodes):
-            print(f"\n[Evaluation Episode {episode + 1}/{num_episodes}]")
+        # Reset environment
+        observations, infos = self.env.reset()
 
-            # Reset environment
-            observations, infos = self.env.reset()
+        episode_rewards = {agent_id: 0.0 for agent_id in self.agent_ids}
+        episode_infos_history = []
+        step_count = 0
+        done = False
+        
+        # Log interval tracking
+        log_interval = self.args.log_interval
 
-            episode_rewards = {agent_id: 0.0 for agent_id in self.agent_ids}
-            episode_infos_history = []
-            step_count = 0
-            done = False
+        # Main simulation loop
+        while not done:
+            # Select actions for all agents (in eval mode)
+            actions = []
+            for agent_id in self.agent_ids:
+                obs = observations[agent_id]
+                action = self.agents[agent_id].select_action(obs, eval_mode=True)
+                actions.append(action)
 
-            # Episode loop
-            while not done:
-                # Select actions for all agents (in eval mode)
-                actions = []
-                for agent_id in self.agent_ids:
-                    obs = observations[agent_id]
-                    action = self.agents[agent_id].select_action(obs, eval_mode=True)
-                    actions.append(action)
+            # Step environment
+            next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
 
-                # Step environment
-                next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
-
-                # Render the environment (pygame will display automatically)
+            # Render if enabled
+            if self.args.render:
                 self.env.render()
 
-                # Store infos for analysis
-                episode_infos_history.append(infos)
+            # Store infos for analysis
+            episode_infos_history.append(infos)
 
-                # Accumulate rewards
-                for agent_id in self.agent_ids:
-                    episode_rewards[agent_id] += rewards[agent_id]
+            # Accumulate rewards
+            for agent_id in self.agent_ids:
+                episode_rewards[agent_id] += rewards[agent_id]
 
-                # Update state
-                observations = next_observations
-                step_count += 1
+            # Update state
+            observations = next_observations
+            step_count += 1
 
-                # Check episode termination
-                if any(terminations.values()) or any(truncations.values()):
-                    done = True
+            # Log EVERY step for complete dynamics tracking
+            self.log_step_summary(step_count, episode_rewards, episode_infos_history)
 
-            # Compute episode statistics
-            stats = self.compute_episode_stats(episode_rewards, episode_infos_history, step_count)
-            all_episode_stats.append(stats)
+            # Count surviving agents
+            survival_count = sum(1 for agent_id in self.agent_ids
+                                if not infos.get(agent_id, {}).get('is_dead', False))
 
-            # Print episode summary
-            print(f"  Steps: {stats['episode_length']}")
-            print(f"  Survival: {stats['survival_count']}/4")
-            print(f"  Mean Reward: {stats['mean_reward']:.2f}")
-            print(f"  Total Collisions: {stats['total_collisions']}")
-            print(f"  Total Kills: {stats['total_kills']}")
-            print(f"  Total Charges: {stats['total_charges']}")
+            # Check episode termination conditions:
+            # 1. All dead (0 surviving)
+            # 2. Only 1 survivor left (no more meaningful interaction)
+            # 3. Max steps reached
+            max_steps_reached = any(truncations.values())
+            
+            if survival_count <= 1 or max_steps_reached:
+                done = True
+                if survival_count == 0:
+                    print(f"\n[Step {step_count}] All agents have died. Simulation ended.")
+                elif survival_count == 1:
+                    # Find the survivor
+                    survivor = [agent_id for agent_id in self.agent_ids
+                               if not infos.get(agent_id, {}).get('is_dead', False)][0]
+                    print(f"\n[Step {step_count}] Only {survivor} survives. Episode complete.")
+                else:
+                    print(f"\n[Step {step_count}] Max steps reached. Simulation ended.")
 
-        # Compute overall statistics
-        overall_stats = self.compute_overall_stats(all_episode_stats)
+        # Final summary
+        final_stats = self.log_final_summary(step_count, episode_rewards, episode_infos_history)
+        
+        return final_stats
 
-        print("\n" + "=" * 60)
-        print("EVALUATION SUMMARY")
-        print("=" * 60)
-        print(f"Episodes: {num_episodes}")
-        print(f"Average Episode Length: {overall_stats['avg_episode_length']:.2f}")
-        print(f"Average Survival Rate: {overall_stats['avg_survival_rate']:.2f}/4")
-        print(f"Average Mean Reward: {overall_stats['avg_mean_reward']:.2f}")
-        print(f"Average Total Collisions: {overall_stats['avg_total_collisions']:.2f}")
-        print(f"Average Total Kills: {overall_stats['avg_total_kills']:.2f}")
-        print(f"Average Total Charges: {overall_stats['avg_total_charges']:.2f}")
-        print("=" * 60)
-
-        return overall_stats
-
-    def compute_episode_stats(self, episode_rewards: Dict[str, float],
-                             episode_infos_history: List[Dict],
-                             step_count: int) -> Dict[str, float]:
+    def log_step_summary(self, step: int, episode_rewards: Dict[str, float],
+                        episode_infos_history: List[Dict]):
         """
-        Compute statistics for a single episode
-
-        Args:
-            episode_rewards: Accumulated rewards for each agent
-            episode_infos_history: Infos records for the entire episode
-            step_count: Number of steps in the episode
-
-        Returns:
-            Episode statistics dictionary
+        Log periodic statistics during simulation (every log_interval steps)
         """
-        # Mean reward
+        # Get current infos
+        current_infos = episode_infos_history[-1] if episode_infos_history else {}
+        
+        # Survival count
+        survival_count = sum(1 for agent_id in self.agent_ids
+                            if not current_infos.get(agent_id, {}).get('is_dead', False))
+        
+        # Current rewards
         all_rewards = list(episode_rewards.values())
         mean_reward = np.mean(all_rewards)
+        
+        # Total collisions, charges, kills up to now
+        total_collisions = sum(current_infos.get(agent_id, {}).get('total_agent_collisions', 0)
+                              for agent_id in self.agent_ids)
+        total_charges = sum(current_infos.get(agent_id, {}).get('total_charges', 0)
+                           for agent_id in self.agent_ids)
+        total_non_home_charges = sum(current_infos.get(agent_id, {}).get('total_non_home_charges', 0)
+                                     for agent_id in self.agent_ids)
+        
+        # Compute kills up to now
+        total_kills, per_agent_kills = self.compute_kills(episode_infos_history)
+        total_immediate_kills, per_agent_immediate_kills = self.compute_immediate_kills(episode_infos_history)
+        
+        # Get per-agent info
+        per_agent_energies = {}
+        per_agent_positions = {}
+        per_agent_collisions = {}
+        per_agent_charges = {}
+        per_agent_non_home_charges = {}
+        
+        for agent_id in self.agent_ids:
+            info = current_infos.get(agent_id, {})
+            per_agent_energies[agent_id] = info.get('energy', 0)
+            per_agent_positions[agent_id] = info.get('position', (0, 0))
+            per_agent_collisions[agent_id] = info.get('total_agent_collisions', 0)
+            per_agent_charges[agent_id] = info.get('total_charges', 0)
+            per_agent_non_home_charges[agent_id] = info.get('total_non_home_charges', 0)
 
-        # Survival count
+        # Prepare wandb log dict
+        log_dict = {
+            "step": step,
+            "survival_rate": survival_count,
+            "mean_cumulative_reward": mean_reward,
+            "total_agent_collisions": total_collisions,
+            "total_charges": total_charges,
+            "total_non_home_charges": total_non_home_charges,
+            "total_kills": total_kills,
+            "total_immediate_kills": total_immediate_kills,
+        }
+        
+        # Add per-agent metrics to wandb
+        for agent_id in self.agent_ids:
+            log_dict[f"{agent_id}/energy"] = per_agent_energies[agent_id]
+            log_dict[f"{agent_id}/position_x"] = per_agent_positions[agent_id][0]
+            log_dict[f"{agent_id}/position_y"] = per_agent_positions[agent_id][1]
+            log_dict[f"{agent_id}/collisions"] = per_agent_collisions[agent_id]
+            log_dict[f"{agent_id}/charges"] = per_agent_charges[agent_id]
+            log_dict[f"{agent_id}/non_home_charges"] = per_agent_non_home_charges[agent_id]
+            log_dict[f"{agent_id}/kills"] = per_agent_kills[agent_id]
+            log_dict[f"{agent_id}/immediate_kills"] = per_agent_immediate_kills[agent_id]
+            log_dict[f"{agent_id}/cumulative_reward"] = episode_rewards[agent_id]
+            
+            # Is dead
+            is_dead = current_infos.get(agent_id, {}).get('is_dead', False)
+            log_dict[f"{agent_id}/is_dead"] = 1 if is_dead else 0
+            
+            # Collided by metrics
+            log_dict[f"{agent_id}/collided_by_robot_0"] = current_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
+            log_dict[f"{agent_id}/collided_by_robot_1"] = current_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
+            log_dict[f"{agent_id}/collided_by_robot_2"] = current_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
+            log_dict[f"{agent_id}/collided_by_robot_3"] = current_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
+        
+        # Log to wandb
+        wandb.log(log_dict)
+
+        # Print summary
+        print(f"[Step {step:5d}] Survival: {survival_count}/4 | "
+              f"Mean Reward: {mean_reward:.2f} | Collisions: {total_collisions} | "
+              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills} | "
+              f"Non-Home Charges: {total_non_home_charges}")
+        
+        # Print per-agent breakdown
+        print(f"  Per-Agent Status:")
+        for agent_id in self.agent_ids:
+            is_dead = current_infos.get(agent_id, {}).get('is_dead', False)
+            death_marker = " 💀" if is_dead else ""
+            pos = per_agent_positions[agent_id]
+            
+            # Get collided_by info
+            collided_by_0 = current_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
+            collided_by_1 = current_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
+            collided_by_2 = current_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
+            collided_by_3 = current_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
+            
+            print(f"    {agent_id}{death_marker}: Pos=({pos[0]},{pos[1]}), "
+                  f"Energy={per_agent_energies[agent_id]}, "
+                  f"Collisions={per_agent_collisions[agent_id]}, "
+                  f"Charges={per_agent_charges[agent_id]}, "
+                  f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
+                  f"Kills={per_agent_kills[agent_id]}, "
+                  f"ImmediateKills={per_agent_immediate_kills[agent_id]}")
+            print(f"      CollidedBy: [0→{collided_by_0}, 1→{collided_by_1}, 2→{collided_by_2}, 3→{collided_by_3}]")
+
+    def log_final_summary(self, step_count: int, episode_rewards: Dict[str, float],
+                         episode_infos_history: List[Dict]) -> Dict[str, float]:
+        """
+        Log final statistics at end of simulation
+        """
         final_infos = episode_infos_history[-1] if episode_infos_history else {}
+        
+        # Survival count
         survival_count = sum(1 for agent_id in self.agent_ids
                             if not final_infos.get(agent_id, {}).get('is_dead', False))
-
-        # Total collisions and charges
+        
+        # Final rewards
+        all_rewards = list(episode_rewards.values())
+        mean_reward = np.mean(all_rewards)
+        std_reward = np.std(all_rewards)
+        
+        # Totals
         total_collisions = sum(final_infos.get(agent_id, {}).get('total_agent_collisions', 0)
                               for agent_id in self.agent_ids)
         total_charges = sum(final_infos.get(agent_id, {}).get('total_charges', 0)
                            for agent_id in self.agent_ids)
+        total_non_home_charges = sum(final_infos.get(agent_id, {}).get('total_non_home_charges', 0)
+                                     for agent_id in self.agent_ids)
+        
+        # Kills
+        total_kills, per_agent_kills = self.compute_kills(episode_infos_history)
+        total_immediate_kills, per_agent_immediate_kills = self.compute_immediate_kills(episode_infos_history)
+        
+        # Per-agent final info
+        per_agent_energies = {}
+        per_agent_positions = {}
+        per_agent_collisions = {}
+        per_agent_charges = {}
+        per_agent_non_home_charges = {}
+        per_agent_deaths = {}
+        
+        for agent_id in self.agent_ids:
+            info = final_infos.get(agent_id, {})
+            per_agent_energies[agent_id] = info.get('energy', 0)
+            per_agent_positions[agent_id] = info.get('position', (0, 0))
+            per_agent_collisions[agent_id] = info.get('total_agent_collisions', 0)
+            per_agent_charges[agent_id] = info.get('total_charges', 0)
+            per_agent_non_home_charges[agent_id] = info.get('total_non_home_charges', 0)
+            per_agent_deaths[agent_id] = 1 if info.get('is_dead', False) else 0
 
-        # Compute kills
-        total_kills = self.compute_kills(episode_infos_history)
-
+        # Print final summary
+        print("\n" + "=" * 60)
+        print("FINAL SIMULATION SUMMARY")
+        print("=" * 60)
+        print(f"Total Steps: {step_count}")
+        print(f"Final Survival: {survival_count}/4")
+        print(f"Mean Cumulative Reward: {mean_reward:.2f} (std: {std_reward:.2f})")
+        print(f"Total Collisions: {total_collisions}")
+        print(f"Total Charges: {total_charges}")
+        print(f"Total Non-Home Charges: {total_non_home_charges}")
+        print(f"Total Kills: {total_kills}")
+        print(f"Total Immediate Kills: {total_immediate_kills}")
+        print("-" * 60)
+        print("Per-Agent Final Statistics:")
+        for agent_id in self.agent_ids:
+            death_marker = " 💀 DEAD" if per_agent_deaths[agent_id] == 1 else " ✓ ALIVE"
+            pos = per_agent_positions[agent_id]
+            
+            # Get collided_by info
+            collided_by_0 = final_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
+            collided_by_1 = final_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
+            collided_by_2 = final_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
+            collided_by_3 = final_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
+            
+            print(f"  {agent_id}{death_marker}")
+            print(f"    Position: ({pos[0]}, {pos[1]})")
+            print(f"    Final Energy: {per_agent_energies[agent_id]}")
+            print(f"    Cumulative Reward: {episode_rewards[agent_id]:.2f}")
+            print(f"    Collisions: {per_agent_collisions[agent_id]}")
+            print(f"    Charges: {per_agent_charges[agent_id]}")
+            print(f"    Non-Home Charges: {per_agent_non_home_charges[agent_id]}")
+            print(f"    Kills: {per_agent_kills[agent_id]}")
+            print(f"    Immediate Kills: {per_agent_immediate_kills[agent_id]}")
+            print(f"    Collided By: [R0→{collided_by_0}, R1→{collided_by_1}, R2→{collided_by_2}, R3→{collided_by_3}]")
+        print("=" * 60)
+        
+        # Log final to wandb
+        final_log = {
+            "final/total_steps": step_count,
+            "final/survival_count": survival_count,
+            "final/mean_cumulative_reward": mean_reward,
+            "final/std_cumulative_reward": std_reward,
+            "final/total_collisions": total_collisions,
+            "final/total_charges": total_charges,
+            "final/total_non_home_charges": total_non_home_charges,
+            "final/total_kills": total_kills,
+            "final/total_immediate_kills": total_immediate_kills,
+        }
+        
+        for agent_id in self.agent_ids:
+            pos = per_agent_positions[agent_id]
+            final_log[f"final/{agent_id}/energy"] = per_agent_energies[agent_id]
+            final_log[f"final/{agent_id}/position_x"] = pos[0]
+            final_log[f"final/{agent_id}/position_y"] = pos[1]
+            final_log[f"final/{agent_id}/cumulative_reward"] = episode_rewards[agent_id]
+            final_log[f"final/{agent_id}/collisions"] = per_agent_collisions[agent_id]
+            final_log[f"final/{agent_id}/charges"] = per_agent_charges[agent_id]
+            final_log[f"final/{agent_id}/non_home_charges"] = per_agent_non_home_charges[agent_id]
+            final_log[f"final/{agent_id}/kills"] = per_agent_kills[agent_id]
+            final_log[f"final/{agent_id}/immediate_kills"] = per_agent_immediate_kills[agent_id]
+            final_log[f"final/{agent_id}/is_dead"] = per_agent_deaths[agent_id]
+        
+        wandb.log(final_log)
+        
         return {
-            'episode_length': step_count,
+            'total_steps': step_count,
             'survival_count': survival_count,
-            'mean_reward': mean_reward,
+            'mean_cumulative_reward': mean_reward,
             'total_collisions': total_collisions,
             'total_kills': total_kills,
-            'total_charges': total_charges
+            'total_immediate_kills': total_immediate_kills,
         }
 
-    def compute_kills(self, episode_infos: List[Dict]) -> int:
+    def compute_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
         """
         Compute the number of "kills" in this episode
 
         Definition: Robot A collides with robot B at time t, and robot B dies within t+1 to t+5
+        
+        Important: Only count as a kill if the collision target was ALIVE at the time of collision
 
         Args:
             episode_infos: Infos records for the entire episode
 
         Returns:
-            Total number of kills
+            Tuple of (total_kills, per_agent_kills_dict)
         """
         kills = 0
+        per_agent_kills = {agent_id: 0 for agent_id in self.agent_ids}
 
         for t, infos in enumerate(episode_infos):
             for agent_id in self.agent_ids:
                 collision_target = infos[agent_id].get('collided_with_agent_id', None)
 
                 if collision_target is not None:
-                    # Check if collision target dies within next 5 steps
-                    for future_t in range(t + 1, min(t + 6, len(episode_infos))):
-                        future_info = episode_infos[future_t][collision_target]
-                        if future_info.get('is_dead', False):
-                            kills += 1
-                            break  # Count only once
+                    # Check if the collision target was alive at the time of collision
+                    if not infos[collision_target].get('is_dead', False):
+                        # Check if collision target dies within next 5 steps
+                        for future_t in range(t + 1, min(t + 6, len(episode_infos))):
+                            future_info = episode_infos[future_t][collision_target]
+                            if future_info.get('is_dead', False):
+                                kills += 1
+                                per_agent_kills[agent_id] += 1
+                                break  # Count only once per collision event
 
-        return kills
+        return kills, per_agent_kills
 
-    def compute_overall_stats(self, all_episode_stats: List[Dict]) -> Dict[str, float]:
+    def compute_immediate_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
         """
-        Compute overall statistics across all episodes
+        Compute the number of "immediate kills" in this episode
+
+        Definition: Robot A collides with robot B at time t, and at time t+1:
+        - Exactly one of them dies (the other survives)
+        - If both die, it does not count
 
         Args:
-            all_episode_stats: List of episode statistics
+            episode_infos: Infos records for the entire episode
 
         Returns:
-            Overall statistics dictionary
+            Tuple of (total_immediate_kills, per_agent_immediate_kills_dict)
         """
-        avg_episode_length = np.mean([s['episode_length'] for s in all_episode_stats])
-        avg_survival_rate = np.mean([s['survival_count'] for s in all_episode_stats])
-        avg_mean_reward = np.mean([s['mean_reward'] for s in all_episode_stats])
-        avg_total_collisions = np.mean([s['total_collisions'] for s in all_episode_stats])
-        avg_total_kills = np.mean([s['total_kills'] for s in all_episode_stats])
-        avg_total_charges = np.mean([s['total_charges'] for s in all_episode_stats])
+        immediate_kills = 0
+        per_agent_immediate_kills = {agent_id: 0 for agent_id in self.agent_ids}
 
-        return {
-            'avg_episode_length': avg_episode_length,
-            'avg_survival_rate': avg_survival_rate,
-            'avg_mean_reward': avg_mean_reward,
-            'avg_total_collisions': avg_total_collisions,
-            'avg_total_kills': avg_total_kills,
-            'avg_total_charges': avg_total_charges
-        }
+        for t, infos in enumerate(episode_infos):
+            if t + 1 >= len(episode_infos):
+                break
+
+            for agent_id in self.agent_ids:
+                collision_target = infos[agent_id].get('collided_with_agent_id', None)
+
+                if collision_target is not None:
+                    # Get death status at t+1
+                    agent_dead_next = episode_infos[t + 1][agent_id].get('is_dead', False)
+                    target_dead_next = episode_infos[t + 1][collision_target].get('is_dead', False)
+
+                    # Check if the collision target was alive at the time of collision
+                    target_alive_at_collision = not infos[collision_target].get('is_dead', False)
+
+                    # Immediate kill: target dies, agent survives, target was alive when collision happened
+                    if target_dead_next and not agent_dead_next and target_alive_at_collision:
+                        immediate_kills += 1
+                        per_agent_immediate_kills[agent_id] += 1
+
+        return immediate_kills, per_agent_immediate_kills
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate trained Independent DQN models")
+    parser = argparse.ArgumentParser(description="Evaluate trained Independent DQN models with long-term simulation")
 
     # Model loading
     parser.add_argument("--model-dir", type=str, required=True,
@@ -299,19 +506,43 @@ def main():
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision")
-    parser.add_argument("--max-episode-steps", type=int, default=500, help="Maximum steps per episode")
 
-    # Evaluation settings
-    parser.add_argument("--num-episodes", type=int, default=5, help="Number of evaluation episodes")
+    # Simulation settings
+    parser.add_argument("--max-steps", type=int, default=10000, help="Maximum steps for single long episode")
     parser.add_argument("--eval-epsilon", type=float, default=0.05,
                        help="Epsilon for evaluation (low value to show learned policy)")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor (should match training)")
 
+    # Rendering (default: no rendering for long simulations)
+    parser.add_argument("--render", action="store_true",
+                       help="Enable pygame rendering (default: disabled)")
+
+    # Wandb settings
+    parser.add_argument("--wandb-entity", type=str, default=None, help="Wandb entity (username or team name)")
+    parser.add_argument("--wandb-project", type=str, default="robot-vacuum-eval", help="Wandb project name")
+    parser.add_argument("--wandb-run-name", type=str, default="long-simulation", help="Wandb run name")
+    parser.add_argument("--wandb-mode", type=str, default="online", help="Wandb mode (online/offline/disabled)")
+
     args = parser.parse_args()
+
+    # Initialize wandb
+    wandb_config = {
+        "project": args.wandb_project,
+        "name": args.wandb_run_name,
+        "config": vars(args),
+        "save_code": True,
+        "mode": args.wandb_mode
+    }
+    if args.wandb_entity:
+        wandb_config["entity"] = args.wandb_entity
+
+    wandb.init(**wandb_config)
 
     # Run evaluation
     evaluator = ModelEvaluator(args)
-    evaluator.evaluate(num_episodes=args.num_episodes)
+    evaluator.evaluate()
+
+    wandb.finish()
 
 
 if __name__ == "__main__":
