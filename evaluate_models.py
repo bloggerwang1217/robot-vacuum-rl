@@ -128,9 +128,6 @@ class ModelEvaluator:
         episode_infos_history = []
         step_count = 0
         done = False
-        
-        # Log interval tracking
-        log_interval = self.args.log_interval
 
         # Main simulation loop
         while not done:
