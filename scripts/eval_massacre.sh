@@ -57,10 +57,14 @@ for ((i=0; i<${#configs[@]}; i++)); do
   # 模型路徑
   model_dir="$MODELS_DIR/$config_name/episode_$EPISODE"
 
+  # 評估 log 儲存路徑 (與模型放在同一目錄)
+  eval_log="$MODELS_DIR/$config_name/eval_ep${EPISODE}.log"
+
   echo "=========================================="
   echo "[$current/$total_configs] 評估: $config_name"
   echo "模型路徑: $model_dir"
   echo "參數: $config_params"
+  echo "Log 儲存: $eval_log"
   echo "開始時間: $(date)"
   echo "=========================================="
 
@@ -72,19 +76,21 @@ for ((i=0; i<${#configs[@]}; i++)); do
     continue
   fi
 
-  # 執行評估
+  # 執行評估並儲存 log (使用 deterministic policy, epsilon=0)
   python3 "$SCRIPT_DIR/evaluate_models.py" \
     --model-dir "$model_dir" \
     $config_params \
     --max-steps $MAX_STEPS \
-    --eval-epsilon 0.05 \
+    --seed 42 \
     --wandb-entity lazyhao-national-taiwan-university \
     --wandb-project robot-vacuum-eval \
     --wandb-run-name "eval-$config_name-ep$EPISODE" \
-    --wandb-mode online
+    --wandb-mode online \
+    2>&1 | tee "$eval_log"
 
   echo ""
   echo "✓ 評估完成: $config_name"
+  echo "Log 已儲存到: $eval_log"
   echo "結束時間: $(date)"
   echo ""
 

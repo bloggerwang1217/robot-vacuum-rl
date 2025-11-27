@@ -261,12 +261,18 @@ class RobotVacuumGymEnv:
                 'charge_count': robot['charge_count'],  # Keep for backwards compatibility
                 'total_charges': robot['charge_count'],  # Cumulative charges (same as charge_count)
                 'total_non_home_charges': robot['non_home_charge_count'],  # Cumulative non-home charges
-                'total_agent_collisions': robot['agent_collision_count'],  # Cumulative agent collisions
-                'collided_with_agent_id': collided_with,  # For kill analysis (converted to agent_id string)
+                'total_agent_collisions': robot['agent_collision_count'],  # Cumulative agent collisions (deprecated)
+                'total_active_collisions': robot['active_collision_count'],  # 主動碰撞總次數
+                'total_passive_collisions': robot['passive_collision_count'],  # 被碰撞總次數
+                'active_collisions_with_0': robot['active_collisions_with'][0],  # 主動碰撞 robot 0 次數
+                'active_collisions_with_1': robot['active_collisions_with'][1],  # 主動碰撞 robot 1 次數
+                'active_collisions_with_2': robot['active_collisions_with'][2],  # 主動碰撞 robot 2 次數
+                'active_collisions_with_3': robot['active_collisions_with'][3],  # 主動碰撞 robot 3 次數
                 'collided_by_robot_0': robot['collided_by_counts'][0],  # 被 robot 0 碰撞次數
                 'collided_by_robot_1': robot['collided_by_counts'][1],  # 被 robot 1 碰撞次數
                 'collided_by_robot_2': robot['collided_by_counts'][2],  # 被 robot 2 碰撞次數
                 'collided_by_robot_3': robot['collided_by_counts'][3],  # 被 robot 3 碰撞次數
+                'collided_with_agent_id': collided_with,  # For kill analysis (converted to agent_id string)
                 'step': state['current_step']
             }
 

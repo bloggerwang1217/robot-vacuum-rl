@@ -5,6 +5,7 @@ Load trained models and run long-term simulation to observe emergent behaviors
 
 import torch
 import numpy as np
+import random
 import os
 import argparse
 import wandb
@@ -25,6 +26,16 @@ class ModelEvaluator:
     """
     def __init__(self, args: argparse.Namespace):
         self.args = args
+
+        # Set seed for reproducibility
+        if args.seed is not None:
+            np.random.seed(args.seed)
+            random.seed(args.seed)
+            torch.manual_seed(args.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(args.seed)
+                torch.cuda.manual_seed_all(args.seed)
+            print(f"Random seed set to: {args.seed}")
 
         # Device setup
         if torch.cuda.is_available():
@@ -205,6 +216,10 @@ class ModelEvaluator:
         # Total collisions, charges, kills up to now
         total_collisions = sum(current_infos.get(agent_id, {}).get('total_agent_collisions', 0)
                               for agent_id in self.agent_ids)
+        total_active_collisions = sum(current_infos.get(agent_id, {}).get('total_active_collisions', 0)
+                                      for agent_id in self.agent_ids)
+        total_passive_collisions = sum(current_infos.get(agent_id, {}).get('total_passive_collisions', 0)
+                                       for agent_id in self.agent_ids)
         total_charges = sum(current_infos.get(agent_id, {}).get('total_charges', 0)
                            for agent_id in self.agent_ids)
         total_non_home_charges = sum(current_infos.get(agent_id, {}).get('total_non_home_charges', 0)
@@ -218,6 +233,8 @@ class ModelEvaluator:
         per_agent_energies = {}
         per_agent_positions = {}
         per_agent_collisions = {}
+        per_agent_active_collisions = {}
+        per_agent_passive_collisions = {}
         per_agent_charges = {}
         per_agent_non_home_charges = {}
         
@@ -226,6 +243,8 @@ class ModelEvaluator:
             per_agent_energies[agent_id] = info.get('energy', 0)
             per_agent_positions[agent_id] = info.get('position', (0, 0))
             per_agent_collisions[agent_id] = info.get('total_agent_collisions', 0)
+            per_agent_active_collisions[agent_id] = info.get('total_active_collisions', 0)
+            per_agent_passive_collisions[agent_id] = info.get('total_passive_collisions', 0)
             per_agent_charges[agent_id] = info.get('total_charges', 0)
             per_agent_non_home_charges[agent_id] = info.get('total_non_home_charges', 0)
 
@@ -235,6 +254,8 @@ class ModelEvaluator:
             "survival_rate": survival_count,
             "mean_cumulative_reward": mean_reward,
             "total_agent_collisions": total_collisions,
+            "total_active_collisions": total_active_collisions,
+            "total_passive_collisions": total_passive_collisions,
             "total_charges": total_charges,
             "total_non_home_charges": total_non_home_charges,
             "total_kills": total_kills,
@@ -247,6 +268,8 @@ class ModelEvaluator:
             log_dict[f"{agent_id}/position_x"] = per_agent_positions[agent_id][0]
             log_dict[f"{agent_id}/position_y"] = per_agent_positions[agent_id][1]
             log_dict[f"{agent_id}/collisions"] = per_agent_collisions[agent_id]
+            log_dict[f"{agent_id}/active_collisions"] = per_agent_active_collisions[agent_id]
+            log_dict[f"{agent_id}/passive_collisions"] = per_agent_passive_collisions[agent_id]
             log_dict[f"{agent_id}/charges"] = per_agent_charges[agent_id]
             log_dict[f"{agent_id}/non_home_charges"] = per_agent_non_home_charges[agent_id]
             log_dict[f"{agent_id}/kills"] = per_agent_kills[agent_id]
@@ -257,7 +280,13 @@ class ModelEvaluator:
             is_dead = current_infos.get(agent_id, {}).get('is_dead', False)
             log_dict[f"{agent_id}/is_dead"] = 1 if is_dead else 0
             
-            # Collided by metrics
+            # Active collisions with each opponent
+            log_dict[f"{agent_id}/active_collisions_with_0"] = current_infos.get(agent_id, {}).get('active_collisions_with_0', 0)
+            log_dict[f"{agent_id}/active_collisions_with_1"] = current_infos.get(agent_id, {}).get('active_collisions_with_1', 0)
+            log_dict[f"{agent_id}/active_collisions_with_2"] = current_infos.get(agent_id, {}).get('active_collisions_with_2', 0)
+            log_dict[f"{agent_id}/active_collisions_with_3"] = current_infos.get(agent_id, {}).get('active_collisions_with_3', 0)
+            
+            # Passive collisions with each opponent (collided_by_robot_X)
             log_dict[f"{agent_id}/collided_by_robot_0"] = current_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
             log_dict[f"{agent_id}/collided_by_robot_1"] = current_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
             log_dict[f"{agent_id}/collided_by_robot_2"] = current_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
@@ -268,7 +297,8 @@ class ModelEvaluator:
 
         # Print summary
         print(f"[Step {step:5d}] Survival: {survival_count}/4 | "
-              f"Mean Reward: {mean_reward:.2f} | Collisions: {total_collisions} | "
+              f"Mean Reward: {mean_reward:.2f} | "
+              f"Collisions: {total_collisions} (Active: {total_active_collisions}, Passive: {total_passive_collisions}) | "
               f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills} | "
               f"Non-Home Charges: {total_non_home_charges}")
         
@@ -279,20 +309,34 @@ class ModelEvaluator:
             death_marker = " 💀" if is_dead else ""
             pos = per_agent_positions[agent_id]
             
-            # Get collided_by info
-            collided_by_0 = current_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
-            collided_by_1 = current_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
-            collided_by_2 = current_infos.get(agent_id, {}).get('collided_by_robot_2', 0)
-            collided_by_3 = current_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
+            # Get active/passive collision info
+            active_collisions = per_agent_active_collisions[agent_id]
+            passive_collisions = per_agent_passive_collisions[agent_id]
             
             print(f"    {agent_id}{death_marker}: Pos=({pos[0]},{pos[1]}), "
                   f"Energy={per_agent_energies[agent_id]}, "
-                  f"Collisions={per_agent_collisions[agent_id]}, "
+                  f"Collisions={per_agent_collisions[agent_id]} (Active: {active_collisions}, Passive: {passive_collisions}), "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
                   f"Kills={per_agent_kills[agent_id]}, "
                   f"ImmediateKills={per_agent_immediate_kills[agent_id]}")
-            print(f"      CollidedBy: [0→{collided_by_0}, 1→{collided_by_1}, 2→{collided_by_2}, 3→{collided_by_3}]")
+            
+            # Get pairwise collision info
+            active_with = [
+                current_infos.get(agent_id, {}).get('active_collisions_with_0', 0),
+                current_infos.get(agent_id, {}).get('active_collisions_with_1', 0),
+                current_infos.get(agent_id, {}).get('active_collisions_with_2', 0),
+                current_infos.get(agent_id, {}).get('active_collisions_with_3', 0)
+            ]
+            collided_by = [
+                current_infos.get(agent_id, {}).get('collided_by_robot_0', 0),
+                current_infos.get(agent_id, {}).get('collided_by_robot_1', 0),
+                current_infos.get(agent_id, {}).get('collided_by_robot_2', 0),
+                current_infos.get(agent_id, {}).get('collided_by_robot_3', 0)
+            ]
+            
+            print(f"      ActiveCollisionsWith: [0→{active_with[0]}, 1→{active_with[1]}, 2→{active_with[2]}, 3→{active_with[3]}]")
+            print(f"      CollidedByRobot: [0→{collided_by[0]}, 1→{collided_by[1]}, 2→{collided_by[2]}, 3→{collided_by[3]}]")
 
     def log_final_summary(self, step_count: int, episode_rewards: Dict[str, float],
                          episode_infos_history: List[Dict]) -> Dict[str, float]:
@@ -506,9 +550,10 @@ def main():
 
     # Simulation settings
     parser.add_argument("--max-steps", type=int, default=10000, help="Maximum steps for single long episode")
-    parser.add_argument("--eval-epsilon", type=float, default=0.05,
-                       help="Epsilon for evaluation (low value to show learned policy)")
+    parser.add_argument("--eval-epsilon", type=float, default=0.0,
+                       help="Epsilon for evaluation (0 for deterministic inference)")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor (should match training)")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility (None for non-deterministic)")
 
     # Rendering (default: no rendering for long simulations)
     parser.add_argument("--render", action="store_true",
