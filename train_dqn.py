@@ -60,6 +60,9 @@ class IndependentDQNAgent:
         else:
             self.epsilon = args.epsilon  # Fixed epsilon (no decay)
 
+        # Eval epsilon (for evaluation mode, default 0)
+        self.eval_epsilon = getattr(args, 'eval_epsilon', 0.0)
+
         # Network architecture
         self.q_net = DQN(action_dim, observation_dim).to(device)
         self.target_net = DQN(action_dim, observation_dim).to(device)
@@ -81,12 +84,12 @@ class IndependentDQNAgent:
 
         Args:
             observation: Current observation
-            eval_mode: Whether in evaluation mode (uses lower epsilon during evaluation)
+            eval_mode: Whether in evaluation mode (uses eval_epsilon)
 
         Returns:
             Selected action
         """
-        epsilon = 0.05 if eval_mode else self.epsilon
+        epsilon = self.eval_epsilon if eval_mode else self.epsilon
 
         if random.random() < epsilon:
             return random.randint(0, self.action_dim - 1)
