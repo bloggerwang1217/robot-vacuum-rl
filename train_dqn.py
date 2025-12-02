@@ -254,39 +254,6 @@ class MultiAgentTrainer:
         # Best model tracking
         self.best_metric = float('-inf')
 
-    def compute_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
-        """
-        Compute the number of "kills" in this episode
-
-        Definition: Robot A collides with robot B at time t, and robot B dies within t+1 to t+5
-
-        Important: Only count as a kill if the collision target was ALIVE at the time of collision
-
-        Args:
-            episode_infos: Infos records for the entire episode (infos dict at each step)
-
-        Returns:
-            Tuple of (total_kills, per_agent_kills_dict)
-        """
-        kills = 0
-        per_agent_kills = {agent_id: 0 for agent_id in self.agent_ids}
-
-        for t, infos in enumerate(episode_infos):
-            for agent_id in self.agent_ids:
-                collision_target = infos[agent_id].get('collided_with_agent_id', None)
-
-                if collision_target is not None:
-                    # Check if the collision target was alive at the time of collision
-                    if not infos[collision_target].get('is_dead', False):
-                        # Check if collision target dies within next 5 steps
-                        for future_t in range(t + 1, min(t + 6, len(episode_infos))):
-                            future_info = episode_infos[future_t][collision_target]
-                            if future_info.get('is_dead', False):
-                                kills += 1
-                                per_agent_kills[agent_id] += 1
-                                break  # Count only once per collision event
-
-        return kills, per_agent_kills
 
     def compute_immediate_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
         """
@@ -478,7 +445,7 @@ class MultiAgentTrainer:
             total_non_home_charges += non_home_charges
 
         # 4. Kills
-        total_kills, per_agent_kills = self.compute_kills(episode_infos_history)
+        # total_kills, per_agent_kills = self.compute_kills(episode_infos_history) # Removed as per user request
         
         # 5. Immediate kills
         total_immediate_kills, per_agent_immediate_kills = self.compute_immediate_kills(episode_infos_history)
@@ -504,7 +471,6 @@ class MultiAgentTrainer:
             "total_agent_collisions_per_episode": total_agent_collisions,
             "total_charges_per_episode": total_charges,
             "total_non_home_charges_per_episode": total_non_home_charges,
-            "total_kills_per_episode": total_kills,
             "total_immediate_kills_per_episode": total_immediate_kills,
             "mean_final_energy": mean_final_energy,
             "epsilon": current_epsilon,
@@ -516,7 +482,6 @@ class MultiAgentTrainer:
             log_dict[f"{agent_id}/collisions_per_episode"] = per_agent_collisions[agent_id]
             log_dict[f"{agent_id}/charges_per_episode"] = per_agent_charges[agent_id]
             log_dict[f"{agent_id}/non_home_charges_per_episode"] = per_agent_non_home_charges[agent_id]
-            log_dict[f"{agent_id}/kills_per_episode"] = per_agent_kills[agent_id]
             log_dict[f"{agent_id}/immediate_kills_per_episode"] = per_agent_immediate_kills[agent_id]
             log_dict[f"{agent_id}/deaths_per_episode"] = per_agent_deaths[agent_id]
             log_dict[f"{agent_id}/cumulative_deaths"] = self.cumulative_deaths[agent_id]

@@ -229,7 +229,7 @@ class ModelEvaluator:
                                      for agent_id in self.agent_ids)
         
         # Compute kills up to now
-        total_kills, per_agent_kills = self.compute_kills(episode_infos_history)
+        # total_kills, per_agent_kills = self.compute_kills(episode_infos_history)
         total_immediate_kills, per_agent_immediate_kills = self.compute_immediate_kills(episode_infos_history)
         
         # Get per-agent info
@@ -261,7 +261,6 @@ class ModelEvaluator:
             "total_passive_collisions": total_passive_collisions,
             "total_charges": total_charges,
             "total_non_home_charges": total_non_home_charges,
-            "total_kills": total_kills,
             "total_immediate_kills": total_immediate_kills,
         }
         
@@ -275,7 +274,6 @@ class ModelEvaluator:
             log_dict[f"{agent_id}/passive_collisions"] = per_agent_passive_collisions[agent_id]
             log_dict[f"{agent_id}/charges"] = per_agent_charges[agent_id]
             log_dict[f"{agent_id}/non_home_charges"] = per_agent_non_home_charges[agent_id]
-            log_dict[f"{agent_id}/kills"] = per_agent_kills[agent_id]
             log_dict[f"{agent_id}/immediate_kills"] = per_agent_immediate_kills[agent_id]
             log_dict[f"{agent_id}/cumulative_reward"] = episode_rewards[agent_id]
             
@@ -302,7 +300,7 @@ class ModelEvaluator:
         print(f"[Step {step:5d}] Survival: {survival_count}/4 | "
               f"Mean Reward: {mean_reward:.2f} | "
               f"Collisions: {total_collisions} (Active: {total_active_collisions}, Passive: {total_passive_collisions}) | "
-              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills} | "
+              f"Immediate Kills: {total_immediate_kills} | "
               f"Non-Home Charges: {total_non_home_charges}")
         
         # Print per-agent breakdown
@@ -321,7 +319,6 @@ class ModelEvaluator:
                   f"Collisions={per_agent_collisions[agent_id]} (Active: {active_collisions}, Passive: {passive_collisions}), "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
-                  f"Kills={per_agent_kills[agent_id]}, "
                   f"ImmediateKills={per_agent_immediate_kills[agent_id]}")
             
             # Get pairwise collision info
@@ -366,7 +363,7 @@ class ModelEvaluator:
                                      for agent_id in self.agent_ids)
         
         # Kills
-        total_kills, per_agent_kills = self.compute_kills(episode_infos_history)
+        # total_kills, per_agent_kills = self.compute_kills(episode_infos_history) # Removed as per user request
         total_immediate_kills, per_agent_immediate_kills = self.compute_immediate_kills(episode_infos_history)
         
         # Per-agent final info
@@ -417,7 +414,6 @@ class ModelEvaluator:
             print(f"    Collisions: {per_agent_collisions[agent_id]}")
             print(f"    Charges: {per_agent_charges[agent_id]}")
             print(f"    Non-Home Charges: {per_agent_non_home_charges[agent_id]}")
-            print(f"    Kills: {per_agent_kills[agent_id]}")
             print(f"    Immediate Kills: {per_agent_immediate_kills[agent_id]}")
             print(f"    Collided By: [R0→{collided_by_0}, R1→{collided_by_1}, R2→{collided_by_2}, R3→{collided_by_3}]")
         print("=" * 60)
@@ -431,7 +427,6 @@ class ModelEvaluator:
             "final/total_collisions": total_collisions,
             "final/total_charges": total_charges,
             "final/total_non_home_charges": total_non_home_charges,
-            "final/total_kills": total_kills,
             "final/total_immediate_kills": total_immediate_kills,
         }
         
@@ -444,7 +439,6 @@ class ModelEvaluator:
             final_log[f"final/{agent_id}/collisions"] = per_agent_collisions[agent_id]
             final_log[f"final/{agent_id}/charges"] = per_agent_charges[agent_id]
             final_log[f"final/{agent_id}/non_home_charges"] = per_agent_non_home_charges[agent_id]
-            final_log[f"final/{agent_id}/kills"] = per_agent_kills[agent_id]
             final_log[f"final/{agent_id}/immediate_kills"] = per_agent_immediate_kills[agent_id]
             final_log[f"final/{agent_id}/is_dead"] = per_agent_deaths[agent_id]
         
@@ -459,39 +453,6 @@ class ModelEvaluator:
             'total_immediate_kills': total_immediate_kills,
         }
 
-    def compute_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
-        """
-        Compute the number of "kills" in this episode
-
-        Definition: Robot A collides with robot B at time t, and robot B dies within t+1 to t+5
-        
-        Important: Only count as a kill if the collision target was ALIVE at the time of collision
-
-        Args:
-            episode_infos: Infos records for the entire episode
-
-        Returns:
-            Tuple of (total_kills, per_agent_kills_dict)
-        """
-        kills = 0
-        per_agent_kills = {agent_id: 0 for agent_id in self.agent_ids}
-
-        for t, infos in enumerate(episode_infos):
-            for agent_id in self.agent_ids:
-                collision_target = infos[agent_id].get('collided_with_agent_id', None)
-
-                if collision_target is not None:
-                    # Check if the collision target was alive at the time of collision
-                    if not infos[collision_target].get('is_dead', False):
-                        # Check if collision target dies within next 5 steps
-                        for future_t in range(t + 1, min(t + 6, len(episode_infos))):
-                            future_info = episode_infos[future_t][collision_target]
-                            if future_info.get('is_dead', False):
-                                kills += 1
-                                per_agent_kills[agent_id] += 1
-                                break  # Count only once per collision event
-
-        return kills, per_agent_kills
 
     def compute_immediate_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
         """
