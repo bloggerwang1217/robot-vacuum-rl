@@ -265,6 +265,7 @@ class RobotVacuumGymEnv:
                 'charge_count': robot['charge_count'],  # Keep for backwards compatibility
                 'total_charges': robot['charge_count'],  # Cumulative charges (same as charge_count)
                 'total_non_home_charges': robot['non_home_charge_count'],  # Cumulative non-home charges
+                'total_agent_collisions': robot['active_collision_count'] + robot['passive_collision_count'],  # 總碰撞次數 (主動+被動)
                 'total_active_collisions': robot['active_collision_count'],  # 主動碰撞總次數
                 'total_passive_collisions': robot['passive_collision_count'],  # 被碰撞總次數
                 'active_collisions_with_0': robot['active_collisions_with'][0],  # 主動碰撞 robot 0 次數

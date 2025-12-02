@@ -216,7 +216,9 @@ class ModelEvaluator:
         all_rewards = list(episode_rewards.values())
         mean_reward = np.mean(all_rewards)
         
-        # Total active/passive collisions, charges, kills up to now
+        # Total collisions, charges, kills up to now
+        total_collisions = sum(current_infos.get(agent_id, {}).get('total_agent_collisions', 0)
+                              for agent_id in self.agent_ids)
         total_active_collisions = sum(current_infos.get(agent_id, {}).get('total_active_collisions', 0)
                                       for agent_id in self.agent_ids)
         total_passive_collisions = sum(current_infos.get(agent_id, {}).get('total_passive_collisions', 0)
@@ -233,6 +235,7 @@ class ModelEvaluator:
         # Get per-agent info
         per_agent_energies = {}
         per_agent_positions = {}
+        per_agent_collisions = {}
         per_agent_active_collisions = {}
         per_agent_passive_collisions = {}
         per_agent_charges = {}
@@ -242,6 +245,7 @@ class ModelEvaluator:
             info = current_infos.get(agent_id, {})
             per_agent_energies[agent_id] = info.get('energy', 0)
             per_agent_positions[agent_id] = info.get('position', (0, 0))
+            per_agent_collisions[agent_id] = info.get('total_agent_collisions', 0)
             per_agent_active_collisions[agent_id] = info.get('total_active_collisions', 0)
             per_agent_passive_collisions[agent_id] = info.get('total_passive_collisions', 0)
             per_agent_charges[agent_id] = info.get('total_charges', 0)
@@ -252,18 +256,20 @@ class ModelEvaluator:
             "step": step,
             "survival_rate": survival_count,
             "mean_cumulative_reward": mean_reward,
+            "total_agent_collisions": total_collisions,
             "total_active_collisions": total_active_collisions,
             "total_passive_collisions": total_passive_collisions,
             "total_charges": total_charges,
             "total_non_home_charges": total_non_home_charges,
             "total_immediate_kills": total_immediate_kills,
         }
-        
+
         # Add per-agent metrics to wandb
         for agent_id in self.agent_ids:
             log_dict[f"{agent_id}/energy"] = per_agent_energies[agent_id]
             log_dict[f"{agent_id}/position_x"] = per_agent_positions[agent_id][0]
             log_dict[f"{agent_id}/position_y"] = per_agent_positions[agent_id][1]
+            log_dict[f"{agent_id}/collisions"] = per_agent_collisions[agent_id]
             log_dict[f"{agent_id}/active_collisions"] = per_agent_active_collisions[agent_id]
             log_dict[f"{agent_id}/passive_collisions"] = per_agent_passive_collisions[agent_id]
             log_dict[f"{agent_id}/charges"] = per_agent_charges[agent_id]
@@ -293,7 +299,7 @@ class ModelEvaluator:
         # Print summary
         print(f"[Step {step:5d}] Survival: {survival_count}/4 | "
               f"Mean Reward: {mean_reward:.2f} | "
-              f"Collisions (Active: {total_active_collisions}, Passive: {total_passive_collisions}) | "
+              f"Collisions: {total_collisions} (Active: {total_active_collisions}, Passive: {total_passive_collisions}) | "
               f"Immediate Kills: {total_immediate_kills} | "
               f"Non-Home Charges: {total_non_home_charges}")
         
@@ -310,7 +316,7 @@ class ModelEvaluator:
             
             print(f"    {agent_id}{death_marker}: Pos=({pos[0]},{pos[1]}), "
                   f"Energy={per_agent_energies[agent_id]}, "
-                  f"Collisions (Active: {active_collisions}, Passive: {passive_collisions}), "
+                  f"Collisions={per_agent_collisions[agent_id]} (Active: {active_collisions}, Passive: {passive_collisions}), "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
                   f"ImmediateKills={per_agent_immediate_kills[agent_id]}")
@@ -349,6 +355,8 @@ class ModelEvaluator:
         std_reward = np.std(all_rewards)
         
         # Totals
+        total_collisions = sum(final_infos.get(agent_id, {}).get('total_agent_collisions', 0)
+                              for agent_id in self.agent_ids)
         total_charges = sum(final_infos.get(agent_id, {}).get('total_charges', 0)
                            for agent_id in self.agent_ids)
         total_non_home_charges = sum(final_infos.get(agent_id, {}).get('total_non_home_charges', 0)
@@ -361,6 +369,7 @@ class ModelEvaluator:
         # Per-agent final info
         per_agent_energies = {}
         per_agent_positions = {}
+        per_agent_collisions = {}
         per_agent_charges = {}
         per_agent_non_home_charges = {}
         per_agent_deaths = {}
@@ -369,6 +378,7 @@ class ModelEvaluator:
             info = final_infos.get(agent_id, {})
             per_agent_energies[agent_id] = info.get('energy', 0)
             per_agent_positions[agent_id] = info.get('position', (0, 0))
+            per_agent_collisions[agent_id] = info.get('total_agent_collisions', 0)
             per_agent_charges[agent_id] = info.get('total_charges', 0)
             per_agent_non_home_charges[agent_id] = info.get('total_non_home_charges', 0)
             per_agent_deaths[agent_id] = 1 if info.get('is_dead', False) else 0
@@ -380,6 +390,7 @@ class ModelEvaluator:
         print(f"Total Steps: {step_count}")
         print(f"Final Survival: {survival_count}/4")
         print(f"Mean Cumulative Reward: {mean_reward:.2f} (std: {std_reward:.2f})")
+        print(f"Total Collisions: {total_collisions}")
         print(f"Total Charges: {total_charges}")
         print(f"Total Non-Home Charges: {total_non_home_charges}")
         print(f"Total Immediate Kills: {total_immediate_kills}")
@@ -399,6 +410,7 @@ class ModelEvaluator:
             print(f"    Position: ({pos[0]}, {pos[1]})")
             print(f"    Final Energy: {per_agent_energies[agent_id]}")
             print(f"    Cumulative Reward: {episode_rewards[agent_id]:.2f}")
+            print(f"    Collisions: {per_agent_collisions[agent_id]}")
             print(f"    Charges: {per_agent_charges[agent_id]}")
             print(f"    Non-Home Charges: {per_agent_non_home_charges[agent_id]}")
             print(f"    Immediate Kills: {per_agent_immediate_kills[agent_id]}")
@@ -411,17 +423,19 @@ class ModelEvaluator:
             "final/survival_count": survival_count,
             "final/mean_cumulative_reward": mean_reward,
             "final/std_cumulative_reward": std_reward,
+            "final/total_collisions": total_collisions,
             "final/total_charges": total_charges,
             "final/total_non_home_charges": total_non_home_charges,
             "final/total_immediate_kills": total_immediate_kills,
         }
-        
+
         for agent_id in self.agent_ids:
             pos = per_agent_positions[agent_id]
             final_log[f"final/{agent_id}/energy"] = per_agent_energies[agent_id]
             final_log[f"final/{agent_id}/position_x"] = pos[0]
             final_log[f"final/{agent_id}/position_y"] = pos[1]
             final_log[f"final/{agent_id}/cumulative_reward"] = episode_rewards[agent_id]
+            final_log[f"final/{agent_id}/collisions"] = per_agent_collisions[agent_id]
             final_log[f"final/{agent_id}/charges"] = per_agent_charges[agent_id]
             final_log[f"final/{agent_id}/non_home_charges"] = per_agent_non_home_charges[agent_id]
             final_log[f"final/{agent_id}/immediate_kills"] = per_agent_immediate_kills[agent_id]
@@ -433,6 +447,7 @@ class ModelEvaluator:
             'total_steps': step_count,
             'survival_count': survival_count,
             'mean_cumulative_reward': mean_reward,
+            'total_collisions': total_collisions,
             'total_immediate_kills': total_immediate_kills,
         }
 

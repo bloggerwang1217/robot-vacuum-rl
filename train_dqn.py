@@ -424,7 +424,15 @@ class MultiAgentTrainer:
         mean_final_energy = np.mean(final_energies)
 
         # Compute total and per-agent metrics
-        # 1. Charges
+        # 1. Collisions
+        per_agent_collisions = {}
+        total_agent_collisions = 0
+        for agent_id in self.agent_ids:
+            collisions = final_infos.get(agent_id, {}).get('total_agent_collisions', 0)
+            per_agent_collisions[agent_id] = collisions
+            total_agent_collisions += collisions
+
+        # 2. Charges
         per_agent_charges = {}
         total_charges = 0
         for agent_id in self.agent_ids:
@@ -464,6 +472,7 @@ class MultiAgentTrainer:
             "survival_rate": survival_count,
             "mean_episode_reward": mean_episode_reward,
             "std_episode_reward": std_episode_reward,
+            "total_agent_collisions_per_episode": total_agent_collisions,
             "total_charges_per_episode": total_charges,
             "total_non_home_charges_per_episode": total_non_home_charges,
             "total_immediate_kills_per_episode": total_immediate_kills,
@@ -471,9 +480,10 @@ class MultiAgentTrainer:
             "epsilon": current_epsilon,
             "global_step": self.global_step
         }
-        
+
         # Add per-agent metrics to wandb
         for agent_id in self.agent_ids:
+            log_dict[f"{agent_id}/collisions_per_episode"] = per_agent_collisions[agent_id]
             log_dict[f"{agent_id}/charges_per_episode"] = per_agent_charges[agent_id]
             log_dict[f"{agent_id}/non_home_charges_per_episode"] = per_agent_non_home_charges[agent_id]
             log_dict[f"{agent_id}/immediate_kills_per_episode"] = per_agent_immediate_kills[agent_id]
@@ -494,7 +504,7 @@ class MultiAgentTrainer:
 
         # Print summary with totals
         print(f"[Episode {episode}] Steps: {step_count} | Survival: {survival_count}/4 | "
-              f"Mean Reward: {mean_episode_reward:.2f} | "
+              f"Mean Reward: {mean_episode_reward:.2f} | Collisions: {total_agent_collisions} | "
               f"Immediate Kills: {total_immediate_kills} | "
               f"Non-Home Charges: {total_non_home_charges}")
         
@@ -511,6 +521,7 @@ class MultiAgentTrainer:
             
             pos = per_agent_positions[agent_id]
             print(f"    {agent_id}{death_marker}: Pos=({pos[0]},{pos[1]}), Energy={per_agent_energies[agent_id]}, "
+                  f"Collisions={per_agent_collisions[agent_id]}, "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
                   f"ImmediateKills={per_agent_immediate_kills[agent_id]}, "
