@@ -106,7 +106,8 @@ class RobotVacuumEnv:
             (self.n - 1, 0),
             (self.n - 1, self.n - 1)
         ]
-        configured_positions = config.get('charger_positions', default_charger_positions)
+        # 使用 or 處理 None 的情況
+        configured_positions = config.get('charger_positions') or default_charger_positions
 
         # 過濾無效座標：(-1, -1) 或超出邊界的座標
         self.charger_positions = []
