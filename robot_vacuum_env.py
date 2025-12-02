@@ -68,7 +68,10 @@ class RobotVacuumEnv:
         self.robot_energies = config.get('robot_energies', [self.initial_energy] * 4)
         self.e_move = config['e_move']
         self.e_charge = config['e_charge']
-        self.e_collision = config['e_collision']
+        self.e_collision_default = config.get('e_collision', 3) # 原本的 e_collision 參數，作為新參數的預設值
+        self.e_collision_active_one_sided = config.get('e_collision_active_one_sided', self.e_collision_default)
+        self.e_collision_active_two_sided = config.get('e_collision_active_two_sided', self.e_collision_default)
+        self.e_collision_passive = config.get('e_collision_passive', self.e_collision_default)
         self.n_steps = config['n_steps']
         self.epsilon = config.get('epsilon', 0.2)  # 預設探索率 20%
 
@@ -138,129 +141,128 @@ class RobotVacuumEnv:
 
     def step(self, actions: List[int]):
         """
-        執行一個時間步
+        執行一個時間步 (採用 v5.0 規則，區分多種碰撞傷害)
 
         Args:
             actions: 包含4個動作的列表 [action_0, action_1, action_2, action_3]
                      每個動作是 0-4 的整數
         """
+        from collections import Counter
+
         # 0. 清除上一回合的碰撞記錄
         for robot in self.robots:
             robot['collided_with_agent_id'] = None
+        
+        if all(not r['is_active'] for r in self.robots):
+            self.current_step += 1
+            return self.get_global_state(), self.current_step >= self.n_steps
 
-        # 1. 只處理活躍的機器人
-        active_robots = [r for r in self.robots if r['is_active']]
-
-        # 2. 計算每個機器人的預定位置
-        planned_positions = []
-        for i, robot in enumerate(self.robots):
-            if not robot['is_active']:
-                planned_positions.append((robot['y'], robot['x']))
-                continue
-
-            action = actions[i]
-
-            if action == self.ACTION_STAY:
-                # 停留在原地
-                planned_positions.append((robot['y'], robot['x']))
-            elif action == self.ACTION_UP:
-                planned_positions.append((robot['y'] - 1, robot['x']))
-            elif action == self.ACTION_DOWN:
-                planned_positions.append((robot['y'] + 1, robot['x']))
-            elif action == self.ACTION_LEFT:
-                planned_positions.append((robot['y'], robot['x'] - 1))
-            elif action == self.ACTION_RIGHT:
-                planned_positions.append((robot['y'], robot['x'] + 1))
-            else:
-                # 無效動作，視為停留
-                planned_positions.append((robot['y'], robot['x']))
-
-        # 3. 處理動作與碰撞
+        # 1. 區分移動和停留的機器人，並計算預定位置
+        moving_robots = {}  # {robot_id: planned_pos}
+        staying_robots = {} # {robot_id: current_pos}
         for i, robot in enumerate(self.robots):
             if not robot['is_active']:
                 continue
 
             action = actions[i]
-            planned_y, planned_x = planned_positions[i]
-
             if action == self.ACTION_STAY:
-                # 停留動作
-                if self.static_grid[robot['y'], robot['x']] == self.CHARGER:
-                    # 在充電座上，進行充電
-                    robot['energy'] += self.e_charge
-                    robot['charge_count'] += 1
-
-                    # 檢查是否在非初始充電座充電
-                    current_pos = (robot['y'], robot['x'])
-                    if current_pos != robot['home_charger']:
-                        robot['non_home_charge_count'] += 1
-                # 如果不在充電座上，不消耗能量
+                staying_robots[i] = (robot['y'], robot['x'])
             else:
-                # 移動動作
-                collision = False
-                collided_agent_id = None
+                py, px = robot['y'], robot['x']
+                if action == self.ACTION_UP: py -= 1
+                elif action == self.ACTION_DOWN: py += 1
+                elif action == self.ACTION_LEFT: px -= 1
+                elif action == self.ACTION_RIGHT: px += 1
+                moving_robots[i] = (py, px)
 
-                # 碰撞檢測1: 邊界
-                if not (0 <= planned_x < self.n and 0 <= planned_y < self.n):
-                    collision = True  # 超出邊界
+        # 2. 判定所有移動機器人的碰撞事件類型
+        collision_events = {}  # {robot_id: "reason_string"}
+        
+        # 2a. 找出被多個機器人搶佔的格子
+        contested_cells = {pos for pos, count in Counter(moving_robots.values()).items() if count > 1}
 
-                # 碰撞檢測2: 其他機器人（檢查當前位置）
-                if not collision:
-                    for j, other_robot in enumerate(self.robots):
-                        if i != j and other_robot['is_active']:
-                            if (other_robot['x'] == planned_x and
-                                other_robot['y'] == planned_y):
-                                collision = True
-                                collided_agent_id = j  # 記錄碰撞對象
-                                break
+        # 2b. 處理交換位置的碰撞
+        moving_robot_ids = list(moving_robots.keys())
+        for i in range(len(moving_robot_ids)):
+            for j in range(i + 1, len(moving_robot_ids)):
+                r_id1, r_id2 = moving_robot_ids[i], moving_robot_ids[j]
+                pos1 = (self.robots[r_id1]['y'], self.robots[r_id1]['x'])
+                pos2 = (self.robots[r_id2]['y'], self.robots[r_id2]['x'])
+                plan1 = moving_robots[r_id1]
+                plan2 = moving_robots[r_id2]
 
-                # 碰撞檢測3: 搶佔同一格（兩個機器人想移到同一位置）
-                if not collision:
-                    for j in range(len(planned_positions)):
-                        if i != j and self.robots[j]['is_active']:
-                            if (planned_positions[j] == (planned_y, planned_x) and
-                                j < i):  # 只檢查較早處理的機器人
-                                collision = True
-                                collided_agent_id = j  # 記錄碰撞對象
-                                break
+                if plan1 == pos2 and plan2 == pos1:
+                    collision_events[r_id1] = "swap"
+                    collision_events[r_id2] = "swap"
+                    self.robots[r_id1]['collided_with_agent_id'] = r_id2
+                    self.robots[r_id2]['collided_with_agent_id'] = r_id1
 
-                # 結算移動
-                if collision:
-                    # 移動失敗，留在原地，消耗碰撞能量
-                    robot['energy'] -= self.e_collision
+        # 2c. 處理其他碰撞
+        for robot_id, planned_pos in moving_robots.items():
+            if robot_id in collision_events: continue
+            py, px = planned_pos
+            
+            if not (0 <= px < self.n and 0 <= py < self.n):
+                collision_events[robot_id] = "boundary"
+            elif planned_pos in staying_robots.values():
+                collision_events[robot_id] = "stationary"
+                for stay_id, stay_pos in staying_robots.items():
+                    if planned_pos == stay_pos:
+                        self.robots[robot_id]['collided_with_agent_id'] = stay_id
+                        self.robots[stay_id]['collided_with_agent_id'] = robot_id
+            elif planned_pos in contested_cells:
+                collision_events[robot_id] = "contested"
+                for other_id, other_pos in moving_robots.items():
+                    if robot_id != other_id and planned_pos == other_pos:
+                        self.robots[robot_id]['collided_with_agent_id'] = other_id
+                        break
+        
+        # 3. 結算所有機器的狀態
+        # 3a. 處理移動的機器人
+        for robot_id, planned_pos in moving_robots.items():
+            robot = self.robots[robot_id]
+            if robot_id in collision_events:
+                reason = collision_events[robot_id]
+                # 判斷並應用不同傷害
+                if reason in ["swap", "contested"]:
+                    robot['energy'] -= self.e_collision_active_two_sided
+                else: # "boundary", "stationary"
+                    robot['energy'] -= self.e_collision_active_one_sided
+                
+                robot['active_collision_count'] += 1
+                if robot['collided_with_agent_id'] is not None:
+                     robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
+            else:
+                # 移動成功
+                robot['y'], robot['x'] = planned_pos
+                robot['energy'] -= self.e_move
 
-                    # 如果是與其他機器人碰撞，記錄碰撞資訊
-                    if collided_agent_id is not None:
-                        robot['agent_collision_count'] += 1
-                        robot['active_collision_count'] += 1
-                        robot['collided_with_agent_id'] = collided_agent_id
-                        robot['active_collisions_with'][collided_agent_id] += 1
-                        
-                        # 更新被碰撞機器人的計數器（記錄被誰碰撞）
-                        other_robot = self.robots[collided_agent_id]
-                        other_robot['collided_by_counts'][robot['id']] += 1
-                        other_robot['passive_collision_count'] += 1
-                else:
-                    # 移動成功
-                    robot['x'] = planned_x
-                    robot['y'] = planned_y
-                    robot['energy'] -= self.e_move
+        # 3b. 處理停留的機器人
+        for robot_id, pos in staying_robots.items():
+            robot = self.robots[robot_id]
+            # 如果被撞
+            if robot['collided_with_agent_id'] is not None:
+                robot['energy'] -= self.e_collision_passive
+                robot['passive_collision_count'] += 1
+                aggressor_id = robot['collided_with_agent_id']
+                robot['collided_by_counts'][aggressor_id] += 1
 
-        # 4. 更新關機狀態
+            # 如果在充電座上
+            if self.static_grid[pos[0], pos[1]] == self.CHARGER:
+                robot['energy'] += self.e_charge
+                robot['charge_count'] += 1
+                if pos != robot['home_charger']:
+                    robot['non_home_charge_count'] += 1
+
+        # 4. 更新所有機器人的關機狀態
         for robot in self.robots:
-            # 能量不超過上限，不低於0（使用機器人的最大血量）
             robot['energy'] = max(0, min(robot['max_energy'], robot['energy']))
-
-            # 如果能量耗盡，設為非活躍
             if robot['energy'] <= 0:
                 robot['is_active'] = False
 
         # 5. 回合計數
         self.current_step += 1
-
-        # 6. 檢查結束
         done = self.current_step >= self.n_steps
-
         return self.get_global_state(), done
 
     def get_global_state(self) -> Dict[str, Any]:

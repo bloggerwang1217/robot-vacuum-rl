@@ -64,6 +64,9 @@ class ModelEvaluator:
             e_move=args.e_move,
             e_charge=args.e_charge,
             e_collision=args.e_collision,
+            e_collision_active_one_sided=args.e_collision_active_one_sided,
+            e_collision_active_two_sided=args.e_collision_active_two_sided,
+            e_collision_passive=args.e_collision_passive,
             n_steps=args.max_steps,  # Use max_steps for single long episode
             render_mode=render_mode
         )
@@ -546,7 +549,10 @@ def main():
     parser.add_argument("--robot-3-energy", type=int, default=None, help="Initial energy for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
-    parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision")
+    parser.add_argument("--e-collision", type=int, default=3, help="Default energy loss per collision (used as fallback)")
+    parser.add_argument("--e-collision-active-one-sided", type=int, default=None, help="Damage for active robot in one-sided collision")
+    parser.add_argument("--e-collision-active-two-sided", type=int, default=None, help="Damage for active robot in two-sided collision")
+    parser.add_argument("--e-collision-passive", type=int, default=None, help="Damage for passive robot in one-sided collision")
 
     # Simulation settings
     parser.add_argument("--max-steps", type=int, default=10000, help="Maximum steps for single long episode")
