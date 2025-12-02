@@ -15,7 +15,7 @@ echo "Results will be saved under: ${BASE_MODELS_DIR}"
 echo "==========================================================="
 
 declare -a configs=(
-  "sanity-c10-e100-eps0-gamma0|--e-collision 10 --initial-energy 150 --epsilon 0 --gamma 0"
+  "sanity-c10-e150-eps0-gamma0|--e-collision 10 --initial-energy 150 --epsilon 0 --gamma 0"
 )
 
 for config_str in "${configs[@]}"; do

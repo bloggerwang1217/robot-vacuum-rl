@@ -18,7 +18,7 @@ echo "==========================================================="
 declare -a configs=(
   "sanity-1charger-c10-e150-eps0.5|--e-collision 10 --initial-energy 150 --epsilon 0.5"
   "sanity-1charger-c10-e150-eps1.0|--e-collision 10 --initial-energy 150 --epsilon 1.0"
-  "sanity-1charger-c10-e150-eps0|--e-collision 10 --initial-energy 100 --epsilon 0"
+  "sanity-1charger-c10-e100-eps0|--e-collision 10 --initial-energy 100 --epsilon 0"
 )
 
 for config_str in "${configs[@]}"; do
