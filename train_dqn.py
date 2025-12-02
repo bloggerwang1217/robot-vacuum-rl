@@ -304,11 +304,15 @@ class MultiAgentTrainer:
                         if agent_alive_at_t1 != target_alive_at_t1:
                             immediate_kills += 1
                             counted_pairs.add((t, pair))
-                            # Attribute to the survivor
+                            # Attribute to the survivor ONLY if they were actively moving at time t
                             if agent_alive_at_t1:
-                                per_agent_immediate_kills[agent_id] += 1
+                                # agent survived, check if they were moving
+                                if infos[agent_id].get('is_mover_this_step', False):
+                                    per_agent_immediate_kills[agent_id] += 1
                             else:
-                                per_agent_immediate_kills[collision_target] += 1
+                                # target survived, check if they were moving
+                                if infos[collision_target].get('is_mover_this_step', False):
+                                    per_agent_immediate_kills[collision_target] += 1
 
         return immediate_kills, per_agent_immediate_kills
 
@@ -427,7 +431,7 @@ class MultiAgentTrainer:
             collisions = final_infos.get(agent_id, {}).get('total_agent_collisions', 0)
             per_agent_collisions[agent_id] = collisions
             total_agent_collisions += collisions
-        
+
         # 2. Charges
         per_agent_charges = {}
         total_charges = 0
@@ -476,7 +480,7 @@ class MultiAgentTrainer:
             "epsilon": current_epsilon,
             "global_step": self.global_step
         }
-        
+
         # Add per-agent metrics to wandb
         for agent_id in self.agent_ids:
             log_dict[f"{agent_id}/collisions_per_episode"] = per_agent_collisions[agent_id]
@@ -501,7 +505,7 @@ class MultiAgentTrainer:
         # Print summary with totals
         print(f"[Episode {episode}] Steps: {step_count} | Survival: {survival_count}/4 | "
               f"Mean Reward: {mean_episode_reward:.2f} | Collisions: {total_agent_collisions} | "
-              f"Kills: {total_kills} | Immediate Kills: {total_immediate_kills} | "
+              f"Immediate Kills: {total_immediate_kills} | "
               f"Non-Home Charges: {total_non_home_charges}")
         
         # Print per-agent breakdown
@@ -520,7 +524,6 @@ class MultiAgentTrainer:
                   f"Collisions={per_agent_collisions[agent_id]}, "
                   f"Charges={per_agent_charges[agent_id]}, "
                   f"NonHomeCharges={per_agent_non_home_charges[agent_id]}, "
-                  f"Kills={per_agent_kills[agent_id]}, "
                   f"ImmediateKills={per_agent_immediate_kills[agent_id]}, "
                   f"CumulativeDeaths={self.cumulative_deaths[agent_id]}")
             print(f"      CollidedBy: [0→{collided_by_0}, 1→{collided_by_1}, 2→{collided_by_2}, 3→{collided_by_3}]")
@@ -531,15 +534,15 @@ class MultiAgentTrainer:
 
         Design based on PLAN.md section 4.3
         """
-        # Use kills as the key metric for this episode
-        total_kills, _ = self.compute_kills(episode_infos_history)
+        # Use immediate kills as the key metric for this episode
+        total_immediate_kills, _ = self.compute_immediate_kills(episode_infos_history)
 
         # Save model if new record is achieved
-        if total_kills > self.best_metric:
-            self.best_metric = total_kills
-            save_path = os.path.join(self.save_dir, f"key_models_ep{episode}_kills{total_kills}")
+        if total_immediate_kills > self.best_metric:
+            self.best_metric = total_immediate_kills
+            save_path = os.path.join(self.save_dir, f"key_models_ep{episode}_kills{total_immediate_kills}")
             self.save_models(save_path)
-            print(f"[Key Model Saved] Episode {episode}: New record of {total_kills} kills!")
+            print(f"[Key Model Saved] Episode {episode}: New record of {total_immediate_kills} immediate kills!")
 
     def save_models(self, subfolder: str):
         """

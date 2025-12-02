@@ -240,7 +240,7 @@ class ModelEvaluator:
         per_agent_passive_collisions = {}
         per_agent_charges = {}
         per_agent_non_home_charges = {}
-        
+
         for agent_id in self.agent_ids:
             info = current_infos.get(agent_id, {})
             per_agent_energies[agent_id] = info.get('energy', 0)
@@ -263,7 +263,7 @@ class ModelEvaluator:
             "total_non_home_charges": total_non_home_charges,
             "total_immediate_kills": total_immediate_kills,
         }
-        
+
         # Add per-agent metrics to wandb
         for agent_id in self.agent_ids:
             log_dict[f"{agent_id}/energy"] = per_agent_energies[agent_id]
@@ -373,7 +373,7 @@ class ModelEvaluator:
         per_agent_charges = {}
         per_agent_non_home_charges = {}
         per_agent_deaths = {}
-        
+
         for agent_id in self.agent_ids:
             info = final_infos.get(agent_id, {})
             per_agent_energies[agent_id] = info.get('energy', 0)
@@ -393,7 +393,6 @@ class ModelEvaluator:
         print(f"Total Collisions: {total_collisions}")
         print(f"Total Charges: {total_charges}")
         print(f"Total Non-Home Charges: {total_non_home_charges}")
-        print(f"Total Kills: {total_kills}")
         print(f"Total Immediate Kills: {total_immediate_kills}")
         print("-" * 60)
         print("Per-Agent Final Statistics:")
@@ -429,7 +428,7 @@ class ModelEvaluator:
             "final/total_non_home_charges": total_non_home_charges,
             "final/total_immediate_kills": total_immediate_kills,
         }
-        
+
         for agent_id in self.agent_ids:
             pos = per_agent_positions[agent_id]
             final_log[f"final/{agent_id}/energy"] = per_agent_energies[agent_id]
@@ -443,13 +442,12 @@ class ModelEvaluator:
             final_log[f"final/{agent_id}/is_dead"] = per_agent_deaths[agent_id]
         
         wandb.log(final_log)
-        
+
         return {
             'total_steps': step_count,
             'survival_count': survival_count,
             'mean_cumulative_reward': mean_reward,
             'total_collisions': total_collisions,
-            'total_kills': total_kills,
             'total_immediate_kills': total_immediate_kills,
         }
 
@@ -488,8 +486,10 @@ class ModelEvaluator:
 
                     # Immediate kill: target dies, agent survives, target was alive when collision happened
                     if target_dead_next and not agent_dead_next and target_alive_at_collision:
-                        immediate_kills += 1
-                        per_agent_immediate_kills[agent_id] += 1
+                        # Only attribute kill if agent was actively moving at time t
+                        if infos[agent_id].get('is_mover_this_step', False):
+                            immediate_kills += 1
+                            per_agent_immediate_kills[agent_id] += 1
 
         return immediate_kills, per_agent_immediate_kills
 
