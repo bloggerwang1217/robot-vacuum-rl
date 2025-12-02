@@ -207,6 +207,21 @@ class MultiAgentTrainer:
             args.robot_3_energy if args.robot_3_energy is not None else args.initial_energy,
         ]
 
+        # Parse charger positions if provided
+        charger_positions = None
+        if args.charger_positions is not None:
+            try:
+                # Parse format: "y1,x1;y2,x2;y3,x3;y4,x4"
+                charger_positions = []
+                for pos_str in args.charger_positions.split(';'):
+                    y, x = map(int, pos_str.split(','))
+                    charger_positions.append((y, x))
+                print(f"Using custom charger positions: {charger_positions}")
+            except Exception as e:
+                print(f"Error parsing charger positions: {e}")
+                print("Using default (four corners)")
+                charger_positions = None
+
         # Environment
         self.env = RobotVacuumGymEnv(
             n=args.env_n,
@@ -218,7 +233,8 @@ class MultiAgentTrainer:
             e_collision_active_one_sided=args.e_collision_active_one_sided,
             e_collision_active_two_sided=args.e_collision_active_two_sided,
             e_collision_passive=args.e_collision_passive,
-            n_steps=args.max_episode_steps
+            n_steps=args.max_episode_steps,
+            charger_positions=charger_positions
         )
 
         # Initialize agents
@@ -578,6 +594,8 @@ def main():
     parser.add_argument("--e-collision-active-two-sided", type=int, default=None, help="Damage for active robot in two-sided collision")
     parser.add_argument("--e-collision-passive", type=int, default=None, help="Damage for passive robot in one-sided collision")
     parser.add_argument("--max-episode-steps", type=int, default=500, help="Maximum steps per episode")
+    parser.add_argument("--charger-positions", type=str, default=None,
+                       help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')
 
     # DQN hyperparameters
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")

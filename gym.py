@@ -45,7 +45,8 @@ class RobotVacuumGymEnv:
                 'e_collision_active_two_sided': kwargs.get('e_collision_active_two_sided', None),
                 'e_collision_passive': kwargs.get('e_collision_passive', None),
                 'n_steps': kwargs.get('n_steps', 500),
-                'epsilon': kwargs.get('epsilon', 0.2)
+                'epsilon': kwargs.get('epsilon', 0.2),
+                'charger_positions': kwargs.get('charger_positions', None)
             }
 
         # 創建底層環境
@@ -60,13 +61,15 @@ class RobotVacuumGymEnv:
         # 定義動作空間 (每個機器人: 0-4)
         self.action_space = spaces.Discrete(5)
 
-        # 定義觀測空間 (每個機器人: 29維向量)
-        # [自身位置2 + 自身能量1 + 其他機器人3*3 + 充電座4*2] = 3 + 9 + 8 = 20
-        # 但根據 PLAN.md 應該是 29 維，我們暫時用 20 維 (簡化版本)
+        # 定義觀測空間 (每個機器人)
+        # [自身位置2 + 自身能量1 + 其他機器人3*3 + 充電座2*N]
+        # = 3 + 9 + 2*num_chargers = 12 + 2*num_chargers
+        num_chargers = len(self.env.charger_positions)
+        obs_dim = 12 + 2 * num_chargers
         self.observation_space = spaces.Box(
             low=-1.0,
             high=1.0,
-            shape=(20,),
+            shape=(obs_dim,),
             dtype=np.float32
         )
 

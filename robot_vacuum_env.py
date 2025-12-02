@@ -60,6 +60,8 @@ class RobotVacuumEnv:
                 - e_collision: 碰撞消耗的能量
                 - n_steps: 一局的總回合數
                 - epsilon: 探索率（用於 epsilon-greedy 策略）
+                - charger_positions: 充電器位置列表，預設為四個角落，
+                                    可指定 1-4 個位置，無效座標（如 (-1,-1) 或超出邊界）會被過濾
         """
         # 儲存配置參數
         self.n = config.get('n', 3)  # 預設 3x3
@@ -97,13 +99,27 @@ class RobotVacuumEnv:
         self.cell_size = 300  # 每個格子的像素大小 (超級大!)
         self.info_panel_width = 700  # 資訊面板寬度 (超級大!)
 
-        # 四個角落的充電座位置
-        self.charger_positions = [
+        # 充電座位置（可配置，預設為四個角落）
+        default_charger_positions = [
             (0, 0),
             (0, self.n - 1),
             (self.n - 1, 0),
             (self.n - 1, self.n - 1)
         ]
+        configured_positions = config.get('charger_positions', default_charger_positions)
+
+        # 過濾無效座標：(-1, -1) 或超出邊界的座標
+        self.charger_positions = []
+        for pos in configured_positions:
+            y, x = pos
+            # 檢查是否為無效座標標記或超出邊界
+            if (y == -1 and x == -1) or y < 0 or x < 0 or y >= self.n or x >= self.n:
+                continue  # 跳過無效座標
+            self.charger_positions.append(pos)
+
+        # 確保至少有 1 個充電器
+        if len(self.charger_positions) == 0:
+            raise ValueError("至少需要 1 個有效的充電器位置")
 
     def reset(self) -> Dict[str, Any]:
         """
@@ -115,13 +131,21 @@ class RobotVacuumEnv:
         # 1. 初始化地圖（只有空地和充電座）
         self.static_grid = np.zeros((self.n, self.n), dtype=np.int32)
 
-        # 2. 在四個角落放置充電座
+        # 2. 放置充電座（可配置位置）
         for y, x in self.charger_positions:
             self.static_grid[y, x] = self.CHARGER
 
-        # 3. 初始化4台機器人，放在四個角落
+        # 3. 初始化4台機器人，固定放在四個角落（無論充電器在哪）
+        robot_start_positions = [
+            (0, 0),
+            (0, self.n - 1),
+            (self.n - 1, 0),
+            (self.n - 1, self.n - 1)
+        ]
         self.robots = []
-        for i, (y, x) in enumerate(self.charger_positions):
+        for i, (y, x) in enumerate(robot_start_positions):
+            # 檢查機器人初始位置是否有充電器
+            has_charger_at_start = (y, x) in self.charger_positions
             robot = {
                 'id': i,
                 'x': x,
@@ -132,7 +156,7 @@ class RobotVacuumEnv:
                 'is_mover_this_step': False,  # 本回合是否主動移動 (用於 kill 歸屬分析)
                 'charge_count': 0,
                 'non_home_charge_count': 0,  # 在非初始充電座充電的次數
-                'home_charger': (y, x),  # 記錄機器人的初始充電座位置
+                'home_charger': (y, x) if has_charger_at_start else None,  # 只在初始位置有充電器時記錄
                 'active_collision_count': 0,  # 主動移動過去碰撞的次數
                 'passive_collision_count': 0,  # 被碰撞的次數
                 'active_collisions_with': {0: 0, 1: 0, 2: 0, 3: 0},  # 主動碰撞各機器人的次數
@@ -261,7 +285,8 @@ class RobotVacuumEnv:
             if self.static_grid[pos[0], pos[1]] == self.CHARGER:
                 robot['energy'] += self.e_charge
                 robot['charge_count'] += 1
-                if pos != robot['home_charger']:
+                # 只在有 home_charger 的情況下才統計 non_home_charge
+                if robot['home_charger'] is not None and pos != robot['home_charger']:
                     robot['non_home_charge_count'] += 1
 
         # 4. 更新所有機器人的關機狀態
