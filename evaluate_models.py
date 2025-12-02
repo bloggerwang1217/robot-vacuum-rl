@@ -82,7 +82,7 @@ class ModelEvaluator:
         dummy_args = argparse.Namespace(
             gamma=args.gamma,
             epsilon=args.eval_epsilon,  # Use low epsilon for evaluation
-            batch_size=32,
+            batch_size=128,
             lr=0.0001,
             memory_size=10000,
             use_epsilon_decay=False,  # No epsilon decay during evaluation

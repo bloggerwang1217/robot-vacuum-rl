@@ -628,7 +628,7 @@ def main():
                        help="Epsilon decay rate per episode (used when --use-epsilon-decay is set)")
 
     parser.add_argument("--memory-size", type=int, default=100000, help="Replay buffer size")
-    parser.add_argument("--batch-size", type=int, default=32, help="Training batch size")
+    parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
     parser.add_argument("--replay-start-size", type=int, default=1000, help="Minimum replay buffer size before training")
     parser.add_argument("--target-update-frequency", type=int, default=1000, help="Target network update frequency")
 
