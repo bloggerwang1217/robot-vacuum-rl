@@ -226,7 +226,7 @@ class RobotVacuumGymEnv:
                 reward += 0.5
 
             # 3. 死亡懲罰
-            if robot['is_active'] and not prev_robot['is_active']:
+            if not robot['is_active'] and prev_robot['is_active']:
                 reward -= 5.0
 
             # 4. 存活獎勵
