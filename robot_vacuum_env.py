@@ -68,10 +68,17 @@ class RobotVacuumEnv:
         self.robot_energies = config.get('robot_energies', [self.initial_energy] * 4)
         self.e_move = config['e_move']
         self.e_charge = config['e_charge']
-        self.e_collision_default = config.get('e_collision', 3) # 原本的 e_collision 參數，作為新參數的預設值
-        self.e_collision_active_one_sided = config.get('e_collision_active_one_sided', self.e_collision_default)
-        self.e_collision_active_two_sided = config.get('e_collision_active_two_sided', self.e_collision_default)
-        self.e_collision_passive = config.get('e_collision_passive', self.e_collision_default)
+        self.e_collision_default = config.get('e_collision', 3)
+        
+        # Robustly handle None values for new collision parameters
+        active_one_sided = config.get('e_collision_active_one_sided')
+        self.e_collision_active_one_sided = active_one_sided if active_one_sided is not None else self.e_collision_default
+
+        active_two_sided = config.get('e_collision_active_two_sided')
+        self.e_collision_active_two_sided = active_two_sided if active_two_sided is not None else self.e_collision_default
+
+        passive = config.get('e_collision_passive')
+        self.e_collision_passive = passive if passive is not None else self.e_collision_default
         self.n_steps = config['n_steps']
         self.epsilon = config.get('epsilon', 0.2)  # 預設探索率 20%
 
