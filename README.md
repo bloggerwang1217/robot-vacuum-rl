@@ -1,292 +1,447 @@
-# 多機器人能量求生模擬器
-Multi-Robot Energy Survival Simulator
+# DQN and Reward Mechanism Analysis
 
-## 🎯 專案目標
-
-這是一個**簡化**的多智能體模擬環境，專注於研究：
-
-- **能量管理**：機器人如何在有限能量下生存
-- **隨機探索 vs 理性決策**：epsilon-greedy 策略的群體動態
-- **多智能體互動**：機器人之間的碰撞和資源競爭
+This document aims to clarify the operation of the DQN (Deep Q-Network) agent in the `robot-vacuum-rl` project, with a focus on its reward function design and implementation details.
 
 ---
 
-## 🎮 核心機制
+## 1. Project Goal
 
-### 1. 環境設定
-- **地圖**：n×n 網格（預設 3×3）
-- **充電座**：4個角落 (0,0), (0,n-1), (n-1,0), (n-1,n-1)
-- **機器人**：4台，初始在各自的充電座上
-
-### 2. 動作空間
-每台機器人每回合可執行 5 種動作：
-- `0`: 向上
-- `1`: 向下
-- `2`: 向左
-- `3`: 向右
-- `4`: 停留（在充電座上可充電）
-
-### 3. 能量系統
-- **初始能量**：`initial_energy`（預設 100）
-- **移動消耗**：`e_move`（預設 1）
-- **碰撞消耗**：`e_collision`（預設 3）
-- **充電恢復**：`e_charge`（預設 5，需在充電座停留）
-- **能量耗盡**：`energy <= 0` 時機器人停機 (`is_active = False`)
-
-### 4. 碰撞規則
-機器人移動時會發生碰撞（消耗 `e_collision` 能量）：
-1. **撞邊界**：移動超出地圖範圍
-2. **撞其他機器人**：移動到已被佔據的格子
-3. **搶佔衝突**：多個機器人嘗試移到同一格子
+The core research question of this project is: When agents are given only a simple "survival" goal (managing energy, avoiding death), will they spontaneously learn "harmful behaviors" towards other agents (e.g., depleting others' energy through collisions) in order to maximize their own survival probability in a resource-limited environment?
 
 ---
 
-## 🤖 RL 環境介面定義 (For Gym API)
+## 2. Core Component Overview
 
-### 核心設計假設 (Core Design Assumptions)
+The entire system consists of two main parts: the **Environment** and the **Agent**, which constantly interact.
 
-本環境的設計基於一個**完全資訊 (Complete Information)** 的設定，旨在讓智能體專注於策略學習而非資訊感知。這包含以下幾個關鍵假設：
+-   **Environment**: Provides the agent with the current "state" and gives a "reward" based on the agent's "action".
+-   **Agent**: Decides which "action" to perform based on the "state" and its own strategy.
 
-> **1. 機器人知道所有其他機器人的位置。**
-> **2. 機器人知道所有充電座的位置。**
-> **3. 機器人知道所有其他機器人的能量。**
+Their relationship and corresponding code files are as follows:
 
-*自然地，這也意味著第四個假設：*
-> **4. 沒有遮蔽 (No Occlusion)**：在上述關鍵資訊上，環境是完全可觀測的，沒有任何遮蔽或資訊遺漏。
+| Role      | Function                        | Main Files                         |
+| :-------- | :------------------------------ | :--------------------------------- |
+| **Environment** | Defines world rules, state, reward | `robot_vacuum_env.py` (Physics Engine), `gym.py` (RL Interface) |
+| **Agent** | Defines neural network, decision, learning | `dqn.py` (Brain Structure), `train_dqn.py` (Decision & Learning) |
+| **Training Script** | Connects environment and agents | `train_dqn.py` (Training Loop)     |
 
-這些假設對於智能體學習複雜的互動策略（如攻擊、避讓、資源競爭）至關重要。
+---
 
-本模擬環境設計為多智能體強化學習 (Multi-Agent Reinforcement Learning, MARL) 的基礎。若要將其包裝為 OpenAI Gym (或 Gymnasium) 兼容的環境，以下是關鍵介面定義：
+## 3. Environment Details (The Environment)
 
-### 1. 多智能體特性
+### 3.1 Physics Rules (Physics Engine - `robot_vacuum_env.py`)
 
-*   **智能體數量**：固定為 4 個機器人 (`robot_0`, `robot_1`, `robot_2`, `robot_3`)。
-*   **動作輸入**：`env.step()` 函式預期接收一個包含 4 個整數的列表或元組，每個整數代表對應機器人的動作。例如：`[action_robot0, action_robot1, action_robot2, action_robot3]`。
-*   **輸出 (Gymnasium 標準)**：`env.step()` 函式將返回一個包含 5 個字典的元組：`(observations, rewards, terminations, truncations, infos)`。每個字典都以機器人 ID (`'robot_0'`, `'robot_1'`, ...) 作為鍵，包含該機器人的對應資訊。
-    *   `observations` (dict): 每個機器人的觀測向量。
-    *   `rewards` (dict): 每個機器人獲得的獎勵值。
-    *   `terminations` (dict): 每個機器人是否因達到終端狀態而結束。
-    *   `truncations` (dict): 每個機器人是否因達到時間限制等非終端條件而截斷。
-    *   `infos` (dict): 每個機器人的額外診斷資訊。
+The underlying operation of the environment defines how robots interact with the world.
 
-### 2. 動作空間 (Action Space)
+-   **Actions**: 5 discrete actions (UP, DOWN, LEFT, RIGHT, STAY).
+-   **Interaction Logic**:
+    1.  **Movement and Collision**: If a robot moves successfully, it consumes `e_move` energy. If the movement fails (due to a collision), it remains in place and consumes different collision energy depending on the situation. The final collision rules are:
+        *   **Rule 1 - Boundary Collision**: The moving party suffers `e_collision_active_one_sided` damage.
+        *   **Rule 2 - Active vs. Stationary Collision**: The moving "attacker" suffers `e_collision_active_one_sided` damage; the stationary "victim" suffers `e_collision_passive` damage.
+        *   **Rule 3 - Simultaneous Move to Same Cell**: Both "parties" in the conflict suffer `e_collision_active_two_sided` damage.
+        *   **Rule 4 - Swapping Positions**: Both "parties" in the conflict suffer `e_collision_active_two_sided` damage.
+    2.  **Charging**: Staying on a charging station (`STAY` action) restores `e_charge` energy.
+    3.  **Death**: When `energy <= 0`, the robot's `is_active` status becomes `False`.
 
-*   **類型**：每個機器人擁有離散動作空間。
-*   **定義**：`gym.spaces.Discrete(5)`
-*   **動作含義**：
-    *   `0`: 向上移動 (UP)
-    *   `1`: 向下移動 (DOWN)
-    *   `2`: 向左移動 (LEFT)
-    *   `3`: 向右移動 (RIGHT)
-    *   `4`: 停留 (STAY)
+### 3.2 Agent's Perspective (`gym.py`)
 
-### 3. 觀測空間 (Observation Space)
+`gym.py` translates physical rules into "observations" and "rewards" that the agent can understand.
 
-每個機器人將接收一個固定長度的浮點數向量作為其局部觀測。這個向量包含了機器人自身的狀態以及其他機器人和充電座的相對狀態。
+#### From Physical Events to Rewards
 
-*   **類型**：`gym.spaces.Box`
-*   **定義**：`gym.spaces.Box(low=-np.inf, high=np.inf, shape=(20,), dtype=np.float32)` (建議在環境內部進行正規化，將範圍映射到 `[0, 1]` 或 `[-1, 1]`)
-*   **觀測向量結構 (長度為 20)**：
-    *   `[0:2]`：**自身位置** `(x, y)`。
-    *   `[2:3]`：**自身能量** `(energy)`。
-    *   `[3:9]`：**其他機器人 1 的相對狀態** `(dx1, dy1, energy1)`。`dx1 = other_x - self_x`, `dy1 = other_y - self_y`。
-    *   `[9:15]`：**其他機器人 2 的相對狀態** `(dx2, dy2, energy2)`。
-    *   `[15:21]`：**其他機器人 3 的相對狀態** `(dx3, dy3, energy3)`。
-    *   `[21:23]`：**充電座 1 的相對位置** `(cdx1, cdy1)`。
-    *   `[23:25]`：**充電座 2 的相對位置** `(cdx2, cdy2)`。
-    *   `[25:27]`：**充電座 3 的相對位置** `(cdx3, cdy3)`。
-    *   `[27:29]`：**充電座 4 的相對位置** `(cdx4, cdy4)`。
-    *   **注意**：所有位置和能量值**必須**進行正規化 (Normalization) 以便於神經網路學習。建議將原始值映射到 `[0, 1]` 或 `[-1, 1]` 範圍。
+The `_calculate_rewards` function in `gym.py` acts as a "translator." It observes state changes from one step to the next and "translates" these physical consequences into an abstract score (reward) that the RL agent can understand. The rules are as follows:
 
-**觀測向量範例 (基於 `n=3`, `initial_energy=100` 的情境)**：
-假設機器人 0 位於 `(1,1)` 能量 `75`，其他機器人位於 `(0,1)` 能量 `20` (ID=1)，`(2,1)` 能量 `90` (ID=2)，`(1,0)` 能量 `5` (ID=3)。充電座位於 `(0,0), (0,2), (2,0), (2,2)`。
+1.  **Energy Change Translation**: All physical events (movement, collision, charging) causing energy increase or decrease are translated proportionally by `* 0.01` into a small reward or penalty.
+2.  **Extra Reward for "Charging Behavior"**: To specifically encourage the critical survival **action** of charging, an additional fixed reward of `+0.5` is given, beyond the energy increase.
+3.  **Huge Penalty for "Death Event"**: At the moment energy runs out and the state changes from "alive" to "dead", a huge penalty of `-5.0` is given. This strong signal makes the agent learn to avoid death at all costs.
+4.  **Small Reward for "Survival State"**: As long as the agent is alive, it receives a tiny `+0.01` "survival bonus" for each step it remains active, encouraging it to prolong its life.
 
-則機器人 0 的觀測向量為：
+#### Reward Calculation Example
+
+Assuming default energy settings (`e_charge=5`, `e_collision_*=3`):
+
+**Scenario 1: Successful Charging**
+A robot is on a charging station and chooses the "STAY" action.
+-   **Physical Event**: Energy `+5`, charge count `+1`, remains active.
+-   **Reward Calculation**:
+    1.  Energy Change: `+5 * 0.01 = +0.05`
+    2.  Charging Action: `+0.5`
+    3.  Death Event: `+0`
+    4.  Survival State: `+0.01`
+-   **Final Reward**: `0.05 + 0.5 + 0.01 = +0.56`
+
+**Scenario 2: Death After Wall Collision**
+A robot with only 2 energy points moves and hits a boundary.
+-   **Physical Event**: Energy `-3` (becomes 0), status changes from "alive" to "dead". Actual energy change is `-2`.
+-   **Reward Calculation**:
+    1.  Energy Change: `-2 * 0.01 = -0.02`
+    2.  Charging Action: `+0`
+    3.  Death Event: `-5.0`
+    4.  Survival State: `+0` (because dead at end of step)
+-   **Final Reward**: `-0.02 - 5.0 = -5.02`
+
+#### Reward Function
+
+This is the code implementation of the above conversion rules, and it is key to guiding the agent's learning.
+
+```python
+# From gym.py -> _calculate_rewards
+def _calculate_rewards(self, state):
+    # ...
+    for i in range(self.n_robots):
+        robot = state['robots'][i]
+        prev_robot = self.prev_robots[i]
+        reward = 0.0
+
+        # 1. Energy change reward (implicitly covers movement/collision penalties)
+        energy_delta = robot['energy'] - prev_robot['energy']
+        reward += energy_delta * 0.01
+
+        # 2. Charging bonus (extra encouragement)
+        if robot['charge_count'] > prev_robot['charge_count']:
+            reward += 0.5
+
+        # 3. Death penalty (heavy penalty for transitioning from alive to dead)
+        if not robot['is_active'] and prev_robot['is_active']:
+             reward -= 5.0
+
+        # 4. Survival bonus (small positive reward for every step alive)
+        if robot['is_active']:
+            reward += 0.01
+
+        rewards[agent_id] = reward
+    return rewards
+```
+#### Observation Space
+
+After defining the "goal" (reward), we need the agent to "see" the world to make decisions. The agent's "view" is a **20-dimensional normalized vector** containing global information from its own perspective. Normalization is crucial for stable neural network learning.
+
+**Coordinate System Explanation**:
+-   Origin `(0,0)` is at the **top-left corner**.
+-   Coordinates are unified as `(x, y)`, where `x` is the horizontal position (column), and `y` is the vertical position (row).
+-   Down is positive, Up is negative; Right is positive, Left is negative.
+
+**Scenario Example**:
+Assume Robot 0 is at `(1,1)` with energy `75`. Other robots are at `(0,1)` with energy `20` (ID=1), `(2,1)` with energy `90` (ID=2), and `(1,0)` with energy `5` (ID=3). The position map is as follows:
+
+```
+  (x) 0   1   2
+(y)
+ 0    .   1   .
+ 1    3   0   .
+ 2    .   2   .
+```
+
+**Observation Vector Example (based on `n=3`, `initial_energy=100` scenario)**:
+Based on the above scenario, Robot 0's observation vector (after normalization) is:
+
+**Normalization Formulas**:
+-   **Own Position**: `pos_norm = pos_abs / (n - 1)`, mapping values from `[0, n-1]` to `[0, 1]`.
+-   **Own/Other's Energy**: `energy_norm = energy_current / initial_energy`, mapping values from `[0, initial_energy]` to `[0, 1]`.
+-   **Relative Position**: `delta_pos_norm = (pos_other - pos_self) / (n - 1)`, mapping values from `[-(n-1), n-1]` to `[-1, 1]`.
+
 ```
 np.array([
-    # 自身位置 (1,1) -> (0.5, 0.5)
+    # Own Position (1,1) -> (0.5, 0.5)
     0.5, 0.5,
-    # 自身能量 75 -> 0.75
+    # Own Energy 75 -> 0.75
     0.75,
-    # 機器人 1 (0,1) 相對自身 (1,1) -> (-1,0) 能量 20 -> (-0.5, 0.0, 0.2)
+    # Robot 1 (0,1) Relative to Self (1,1) -> (-1,0) Energy 20 -> (-0.5, 0.0, 0.2)
     -0.5, 0.0, 0.2,
-    # 機器人 2 (2,1) 相對自身 (1,1) -> (1,0) 能量 90 -> (0.5, 0.0, 0.9)
+    # Robot 2 (2,1) Relative to Self (1,1) -> (1,0) Energy 90 -> (0.5, 0.0, 0.9)
     0.5, 0.0, 0.9,
-    # 機器人 3 (1,0) 相對自身 (1,1) -> (0,-1) 能量 5 -> (0.0, -0.5, 0.05)
+    # Robot 3 (1,0) Relative to Self (1,1) -> (0,-1) Energy 5 -> (0.0, -0.5, 0.05)
     0.0, -0.5, 0.05,
-    # 充電座 1 (0,0) 相對自身 (1,1) -> (-1,-1) -> (-0.5, -0.5)
+    # Charger 1 (0,0) Relative to Self (1,1) -> (-1,-1) -> (-0.5, -0.5)
     -0.5, -0.5,
-    # 充電座 2 (0,2) 相對自身 (1,1) -> (-1,1) -> (-0.5, 0.5)
+    # Charger 2 (0,2) Relative to Self (1,1) -> (-1,1) -> (-0.5, 0.5)
     -0.5, 0.5,
-    # 充電座 3 (2,0) 相對自身 (1,1) -> (1,-1) -> (0.5, -0.5)
+    # Charger 3 (2,0) Relative to Self (1,1) -> (1,-1) -> (0.5, -0.5)
     0.5, -0.5,
-    # 充電座 4 (2,2) 相對自身 (1,1) -> (1,1) -> (0.5, 0.5)
+    # Charger 4 (2,2) Relative to Self (1,1) -> (1,1) -> (0.5, 0.5)
     0.5, 0.5
 ], dtype=np.float32)
 ```
 
-### 4. 獎勵機制 (Reward Structure)
+---
 
-每個機器人將獲得一個獨立的標量獎勵。獎勵設計旨在鼓勵生存和能量管理，同時觀察潛在的攻擊行為。
+## 4. DQN Agent Details (The DQN Agent)
 
-**獎勵計算邏輯 (基於 Claude 的「能量管理獎勵」方案)**：
+This project features a multi-agent environment, and the strategy we employ is **"Independent DQN (IDQN)"**.
 
-```python
-def calculate_reward_for_robot(robot_after_step, prev_robot_state, collision_occurred_flag, charged_flag, config):
-    reward = 0.0
-    
-    # 1. 能量變化獎勵 (Energy Change Reward)
-    #    這項獎勵會自動反映移動消耗、碰撞消耗和充電恢復。
-    energy_delta = robot_after_step['energy'] - prev_robot_state['energy']
-    reward += energy_delta * 0.01 # 能量每變化 1 點，獎勵變化 0.01 (此縮放因子可調)
-    
-    # 2. 充電獎勵 (Charging Bonus)
-    #    額外鼓勵充電行為
-    if charged_flag: # 如果機器人成功充電 (需由環境判斷並傳遞此旗標)
-        reward += 0.5
-    
-    # 3. 碰撞懲罰 (Collision Penalty)
-    #    額外懲罰碰撞事件本身，即使能量變化已經包含了碰撞消耗
-    if collision_occurred_flag: # 如果機器人發生碰撞 (需由環境判斷並傳遞此旗標)
-        reward -= 0.3
-    
-    # 4. 死亡重罰 (Death Penalty)
-    #    機器人能量耗盡停機時給予巨大懲罰
-    if not robot_after_step['is_active']:
-        reward -= 5.0
-    
-    # 5. 存活獎勵 (Survival Bonus)
-    #    每回合存活下來的基礎獎勵
-    if robot_after_step['is_active']:
-        reward += 0.01
-    
-    return reward
+**Core Idea**: An entirely independent DQN agent is created for each robot. This means each robot has its own neural network and dedicated experience replay buffer. Their only connection is that they **share the same environment**. When any robot moves, this change is immediately reflected in **the observation vectors of all other robots** (because the vector contains the relative positions and energy of everyone). Therefore, each robot's DQN learns how to interpret this 20-dimensional vector containing "information about others," thereby forming its own "perception" of this multi-agent world and making decisions most beneficial to itself.
+
+This logic is encapsulated in the `IndependentDQNAgent` class in `train_dqn.py`. The next three subsections will delve into the internal structure of this independent agent.
+
+### 4.1 Model Architecture (`dqn.py`)
+
+The agent's "brain" is a Multi-Layer Perceptron (MLP). It receives a 20-dimensional state observation vector and outputs Q-values corresponding to 5 actions. Its structure is shown below:
+
+```text
++--------------------------------+
+|  Input (Observation Vector)    |
+|  shape: [batch_size, 20]       |
++--------------------------------+
+               |
+               v
++--------------------------------+
+|  Linear(20, 128) + ReLU        |
++--------------------------------+
+               |
+               v
++--------------------------------+
+|  Linear(128, 256) + ReLU       |
++--------------------------------+
+               |
+               v
++--------------------------------+
+|  Linear(256, 256) + ReLU       |
++--------------------------------+
+               |
+               v
++--------------------------------+
+|  Linear(256, 128) + ReLU       |
++--------------------------------+
+               |
+               v
++--------------------------------+
+|  Linear(128, 5)                |
++--------------------------------+
+               |
+               v
++--------------------------------+
+|  Output (Q-values for each action) |
+|  shape: [batch_size, 5]        |
++--------------------------------+
 ```
 
-*   **研究重點**：觀察在上述獎勵設計下，是否會湧現出「攻擊」其他機器人以獨佔資源的行為。
+The corresponding PyTorch code is as follows:
+```python
+# From dqn.py
+class DQN(nn.Module):
+    def __init__(self, num_actions, input_dim):
+        super(DQN, self).__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, 128), # input_dim = 20
+            nn.ReLU(),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, num_actions) # num_actions = 5
+        )
 
-### 5. 回合終止條件 (Episode Termination)
+    def forward(self, x):
+        return self.network(x)
+```
 
-一個回合的終止狀態將透過 `terminations` 和 `truncations` 兩個字典來表示：
+### 4.2 Decision Mechanism (Action Selection - Epsilon-Greedy)
 
-*   **`terminations` (終止)**：
-    *   當單個機器人的能量耗盡 (`robot['is_active']` 變為 `False`) 時，該機器人的 `terminations` 標記為 `True`。
-    *   當所有機器人的 `is_active` 狀態均為 `False` 時，整個回合結束，所有機器人的 `terminations` 標記為 `True`。
-*   **`truncations` (截斷)**：
-    *   當達到最大步數 (`env.current_step >= config['n_steps']`) 時，所有機器人的 `truncations` 標記為 `True`。
+The agent employs an Epsilon-Greedy strategy to balance "exploration" and "exploitation".
 
-### 6. 環境初始化
+```python
+# From train_dqn.py -> IndependentDQNAgent.select_action
+def select_action(self, observation):
+    # Explore with probability epsilon
+    if random.random() < self.epsilon:
+        return random.randint(0, self.action_dim - 1)
+    # Exploit with probability (1-epsilon) by choosing the action with the highest Q-value (Greedy)
+    state_tensor = torch.from_numpy(observation).float().unsqueeze(0).to(self.device)
+    with torch.no_grad():
+        # 1. Q-Network outputs Q-values for all actions
+        q_values = self.q_net(state_tensor)
+    # 2. Select the index of the action with the highest Q-value
+    return q_values.argmax().item()
+```
 
-*   `env.reset()`：重置環境到初始狀態。它將返回一個包含所有機器人初始觀測的字典 `observations`，以及一個包含額外資訊的字典 `infos`。
-    *   返回值：`(observations, infos)`
+### 4.3 Experience Replay
 
-### 7. 額外資訊 (Infos)
+To break the temporal correlation between experiences and improve sample efficiency, we use the "Experience Replay" technique. This acts like a "memory palace" for the agent.
 
-`infos` 字典是觀察和分析群體動態的關鍵。它提供了不應用於訓練，但對除錯和研究非常有價值的原始數據和事件標記。
+-   **Remember**: After each step of interaction, the agent doesn't learn immediately. Instead, it stores the complete experience `(state, action, reward, next_state, done)` into a fixed-size "replay buffer".
+-   **Storage Capacity**: The default replay buffer size is **100,000** experiences (controlled by the `memory_size` parameter).
+-   **Start Training**: The agent does not learn from the very beginning. In the early stages of training, `epsilon` is high (default 1.0), and the agent primarily engages in **random exploration**. It first performs these random actions to collect experiences until at least **1,000** experiences (controlled by the `replay_start_size` parameter) have accumulated in the replay buffer. Only then does it start sampling from the buffer and updating the neural network.
+-   **Forgetting**: When the buffer is full, the oldest memories are automatically discarded (following a First-In-First-Out, FIFO, principle).
 
-對於每個機器人 `i`，`infos['robot_i']` 應該包含以下內容：
+**Psychological Analogy**: The Replay Buffer is very similar to "Episodic Long-Term Memory" in psychology. It stores the agent's past specific experiences and events (e.g., `(S, A, R, S')` at a certain time), rather than general knowledge or skills (which are more akin to the neural network's weights).
 
-*   **`energy`** (int): 該機器人當前的原始能量值。
-*   **`position`** (tuple): 該機器人當前的原始 `(x, y)` 座標。
-*   **`collided_with_agent_id`** (int or None): 在這一步中與之碰撞的**其他機器人 ID**。如果沒有發生機器人碰撞，則為 `None`。
-*   **`is_charging`** (bool): 在這一步中是否成功充電。
-*   **`is_dead`** (bool): 在這一步中是否剛好能量耗盡而停機。
-*   **`total_agent_collisions`** (int): 在本回合中，該機器人與**其他機器人**累計的碰撞次數。
-*   **`total_charges`** (int): 在本回合中，該機器人累計的充電次數。
+```python
+# From train_dqn.py -> IndependentDQNAgent
+# Initialize Replay Buffer in __init__
+self.memory = deque(maxlen=args.memory_size)
 
-**研究應用 (您的 "y" 指標)**：
-透過記錄每一輪的 `infos`，我們可以進行後續分析：
-*   **撞擊到其他機器人的累積次數**: 直接使用 `total_agent_collisions` 即可。
-*   **撞擊造成對方關機的次數 (間接「擊殺」)**: 這是一個需要後處理的指標。分析腳本需要遍歷記錄下來的 `infos` 歷史：
-    1.  找到機器人 A 在 `t` 時刻 `collided_with_agent_id` **不為 `None`** 的事件。
-    2.  從 `collided_with_agent_id` 獲取碰撞對象機器人 B 的 ID。
-    3.  檢查機器人 B 是否在之後一個很短的時間窗口內（例如 `t+1` 到 `t+5` 時刻）`is_dead` 變為 `True`。
-    4.  若滿足條件，則可視為一次「擊殺」。
-*   **其他動態分析**: 繪製群體平均能量、總碰撞次數隨時間變化的曲線。
+# Method to store memories
+def remember(self, state, action, reward, next_state, done):
+    """Store experience to replay buffer"""
+    self.memory.append((state, action, reward, next_state, done))
+```
+
+### 4.4 Learning Update and Bellman Error
+
+Once enough experiences have accumulated in the Replay Buffer (default `replay_start_size = 1000`), the agent begins to learn. The core of learning is to minimize the **Bellman Error**.
+
+-   **Bellman Equation**: This is the theoretical foundation of Q-Learning, defining the recursive relationship that optimal Q-values should satisfy.
+-   In DQN, we simplify this into a **Temporal Difference (TD) Target**.
+-   **Bellman Error** (or TD Error) refers to the difference between `(TD Target - current predicted Q-value)`.
+-   **Loss Function**: Its purpose is to calculate the **Mean Squared Error (MSE)** of this error. The goal of training is to update the neural network's weights to minimize this Loss.
+
+#### Intuitive Explanation: Why this formula?
+
+This formula can be compared to "playing chess" to understand the "true value" of a good move.
+
+> $$ y = r + \gamma \cdot \max_{a'} Q(s', a') $$
+
+The "true value" of an action (`y`) consists of two parts:
+
+1.  **Immediate Benefit (`r`)**:
+    *   **Chess Analogy**: If I make this move, can I **immediately capture** an opponent's pawn?
+    *   **Robot Scenario**: By executing this action, did I **immediately gain** a charging reward, or **immediately lose** energy due to a collision?
+
+2.  **Future Potential (`γ * max_a' Q(s', a')`)**:
+    *   `max_a' Q(s', a')` refers to: After making this move and reaching a new state `s'`, what is the potential of the **best subsequent move** my side can make?
+    *   `γ` (gamma) is the **degree of importance given to the future** (discount factor). A higher `γ` means the robot is more "far-sighted".
+
+Therefore, the meaning of the entire formula is:
+> **True Value of an Action = Immediate Benefit + Discounted Future Potential**
+
+The learning objective of DQN is to make our neural network's predictions increasingly close to this "true value".
+
+---
+The entire learning process is encapsulated in the `train_step` function, which uses "Experience Replay" and "Target Network" techniques to stabilize training.
+
+```python
+# From train_dqn.py -> IndependentDQNAgent.train_step (Detailed Annotation Version)
+def train_step(self):
+    # 1. Randomly sample a batch of experiences from the Replay Buffer (default batch_size = 128)
+    batch = random.sample(self.memory, self.batch_size)
+    states, actions, rewards, next_states, dones = zip(*batch)
+
+    # --- Core Update Steps ---
+
+    # 2. Calculate Q(s,a)
+    #    Use the "main network q_net" to calculate the predicted Q-value for the action 'a' that was "actually taken in the past" in the batch.
+    q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
+
+    # 3. Calculate TD Target y = r + γ * max_a' Q(s', a')
+    with torch.no_grad(): # Target network calculations do not require gradient tracking
+        # Use the "target network target_net" to predict the maximum Q-value for the next state s'.
+        next_q_values = self.target_net(next_states).max(1)[0]
+        # Calculate the TD Target according to the Bellman Equation.
+        target_q_values = rewards + self.gamma * next_q_values * (1 - dones)
+
+    # 4. Calculate Loss, which is the Mean Squared Error (MSE) of the Bellman Error
+    #    Loss = mean( (target_q_values - q_values)^2 )
+    loss = nn.MSELoss()(q_values, target_q_values)
+
+    # 5. Update the weights of the "main network q_net" via backpropagation to minimize the Loss
+    self.optimizer.zero_grad()
+    loss.backward()
+    self.optimizer.step()
+```
+
+#### Role of the Target Network
+
+You might ask: Why is a separate `target_net` used to calculate the TD Target, instead of directly using `q_net`?
+
+This is the second magic ingredient for stabilizing DQN training (the first being Experience Replay).
+
+-   **Problem**: If both the target calculation and the prediction calculation use the same `q_net` (which changes at every step), it's like **"trying to hit a moving target while calibrating your gun with that same moving target."** This causes the learning target (TD Target) to constantly shift, leading to very unstable training and making it difficult for the model to converge.
+-   **Solution**: The `target_net` acts as a **"fixed target."** It is a copy of `q_net`, but its weights are **not** updated at every step. Instead, its weights are **completely copied** from `q_net` only every N steps (controlled by the `target_update_frequency` parameter). This way, when calculating the TD Target, `q_net` has a relatively stable goal to chase, making the learning process much smoother.
 
 ---
 
-## 📦 安裝與執行
+## 5. Full Training Loop
 
-### 1. 安裝依賴
-建議使用虛擬環境。首先，請安裝 `requirements.txt` 中列出的所有依賴項。
+The main training loop is located within `MultiAgentTrainer.train`. It operates in units of Episodes, and each Episode contains iterations of multiple Steps. The following is the detailed technical flow of what the code executes within a single time step:
 
-```bash
-pip install -r requirements.txt
-```
+1.  **Action Selection**
+    Iterate through all agents, use the `select_action` method to choose an action based on the current observation `obs` and the `epsilon-greedy` strategy, and compile them into an `actions` list.
+    ```python
+    # From MultiAgentTrainer.train
+    actions = []
+    for agent_id in self.agent_ids:
+        obs = observations[agent_id]
+        action = self.agents[agent_id].select_action(obs)
+        actions.append(action)
+    ```
 
-### 2. 環境視覺化展示
-您可以執行 `robot_vacuum_env.py` 來觀看環境的視覺化效果。這將啟動一個使用預設配置的模擬，機器人會依據內建的簡單策略行動。
+2.  **Environment Interaction**
+    Pass the `actions` list for all agents to `env.step()` (`RobotVacuumGymEnv`) to get the next state, reward, termination signals, and other information returned by the environment.
+    ```python
+    # From MultiAgentTrainer.train
+    next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
+    ```
 
-```bash
-python robot_vacuum_env.py
-```
+3.  **Experience Storage**
+    Iterate through all agents again, storing the complete transition `(s, a, r, s')` for that time step into their respective experience replay buffers.
+    ```python
+    # From MultiAgentTrainer.train
+    for i, agent_id in enumerate(self.agent_ids):
+        # ... (get obs, next_obs, reward, terminated) ...
+        self.agents[agent_id].remember(obs, actions[i], reward, next_obs, terminated)
+        # ...
+    ```
 
-模擬會開啟一個 Pygame 視窗，顯示：
-- **地圖**：白色空地 + 藍色充電座
-- **機器人**：4種顏色的圓圈
-  - 紅色 = 機器人 0
-  - 綠色 = 機器人 1
-  - 黃色 = 機器人 2
-  - 紫色 = 機器人 3
-- **資訊面板**：每台機器人的能量條、充電次數和狀態
+4.  **Learning Trigger and Execution**
+    After storing the experience, immediately call the `train_step` function. This function has a safeguard mechanism: a Bellman Error-based gradient update (as described in Section 4.4) is executed only if the buffer size reaches the `replay_start_size` threshold. If the threshold is not met, the function does nothing.
+    ```python
+    # From MultiAgentTrainer.train
+    train_stats = self.agents[agent_id].train_step(self.args.replay_start_size)
+    
+    # From IndependentDQNAgent.train_step
+    if len(self.memory) < replay_start_size:
+        return {} # Not enough experiences, skip learning
+    # ... (execute sampling and gradient update) ...
+    ```
 
-### 3. 訓練執行
-未來，當 DQN 訓練腳本完成後，您將透過 `train_dqn.py` 腳本來啟動 RL 訓練。
-
----
-
-## ⚙️ 配置參數
-
-使用 `energy_survival_config.py` 中的預設配置：
-
-```python
-from robot_vacuum_env import RobotVacuumEnv
-from energy_survival_config import get_config
-
-# 使用預設配置
-config = get_config('base')
-env = RobotVacuumEnv(config)
-```
-
-### 可用配置模式
-
-| 模式 | 說明 | ε | 特點 |
-|------|------|---|------|
-| `base` | 基礎模式 | 20% | 標準平衡設定 |
-| `high_explore` | 高探索 | 50% | 更多隨機行為 |
-| `low_explore` | 低探索 | 10% | 更理性的決策 |
-| `pure_rational` | 純理性 | 0% | 完全理性求生 |
-| `pure_random` | 純隨機 | 100% | 完全隨機探索 |
-| `energy_scarce` | 能量緊張 | 20% | 低能量，高消耗 |
-| `energy_abundant` | 能量充裕 | 20% | 高能量，低消耗 |
-| `large` | 大地圖 | 20% | 5×5 房間 |
-| `tiny` | 超小地圖 | 20% | 2×2 房間（極限擁擠） |
-| `quick` | 快速測試 | 20% | 100 回合 |
-| `long` | 長期模擬 | 20% | 2000 回合 |
-
-### 自訂配置
-
-```python
-custom_config = {
-    'n': 3,                 # 房間大小
-    'initial_energy': 100,  # 初始能量
-    'e_move': 1,            # 移動消耗
-    'e_charge': 5,          # 充電恢復
-    'e_collision': 3,       # 碰撞消耗
-    'n_steps': 500,         # 總回合數
-    'epsilon': 0.2          # 探索率
-}
-
-env = RobotVacuumEnv(custom_config)
-```
+5.  **Target Network Update**
+    After each time step, check the `global_step` count. If it reaches the `target_update_frequency`, the weights of the main Q-network are synchronized to the target network.
+    ```python
+    # From MultiAgentTrainer.train
+    if self.global_step % self.args.target_update_frequency == 0:
+        for agent in self.agents.values():
+            agent.update_target_network()
+    ```
+    These five steps continuously loop within each episode until the termination conditions are met, driving the entire learning process.
 
 ---
 
-## 未來擴展
-這個環境可以作為基礎，進一步探索：
-- **更複雜的 MARL 演算法**：例如 QMIX, MADDPG 等，以應對多智能體環境中的非靜態性挑戰。
-- **參數共享**：探索不同程度的參數共享策略，以提高學習效率和泛化能力。
-- **通訊機制**：引入機器人之間的通訊機制，研究其對群體行為和學習效率的影響。
-- **異質性智能體**：設計具有不同能力或目標的機器人，研究其互動模式。
+## 6. Training and Evaluation
 
+After verifying the correctness of the methods, we need to use experimental results to answer the initial research question: "Will harmful behaviors emerge under survival pressure?"
+
+#### 6.1 Training Process
+
+First, we need to prove that agents actually learned something and are not just randomly wandering.
+
+-   **Learning Curve**: Display a curve graph showing "Mean Episode Reward" versus "Training Episodes". A steadily rising curve demonstrates that the overall performance of the agents (e.g., survival ability) indeed improved with training.
+
+#### 6.2 Evaluation Setup and Behavioral Analysis
+
+To objectively evaluate the strategies learned by the trained model, we use a dedicated evaluation script (`evaluate_models.py`) run in inference mode. The main differences from the training process are:
+
+1.  **Load Pre-trained Model**: Instead of starting from scratch, a saved model is loaded (using the model from the final 2000 episodes).
+2.  **Deterministic Decision-Making (Zero Epsilon)**: `epsilon` is set to 0. Agents will only choose what they believe to be the best action, with no random exploration.
+3.  **Single Long Episode**: Only one very long episode is run (`--max-steps` defaults to 10,000) to observe long-term, stable behavior.
+4.  **Learning Disabled**: No experiences are stored, and no model weights are updated; only inference is performed.
+
+Under this setup, we observe and quantify the specific behavioral metrics of the agents:
+
+-   **Quantitative Metrics**: The following key metrics can be plotted over training time:
+    -   **Active Collision Count (`active_collision_count`)**: Measures whether agents tend to actively collide with others.
+    -   **Immediate Kill Count (`immediate_kill_count`)**: An indirect metric calculated via `infos`, directly reflecting the lethality of attacks (i.e., causing the opponent to die within the next time step after a collision).
+    -   **Non-Home Charging Count (`non_home_charge_count`)**: Measures whether agents learn to steal others' resources.
+-   **Analysis**: If a significant upward trend is observed in these metrics (especially `active_collision` and `immediate_kill_count`) during later stages of training, it strongly suggests that agents have spontaneously evolved "aggressive" strategies to maximize survival rewards.
+
+#### 6.3 Qualitative Showcase
+
+Beyond raw data, the most intuitive way to present results is to show a video (GIF or short video) of the trained agents interacting.
+
+-   **Video Production**: Can be recorded by running `evaluate_models.py` with the `--render` flag.
+-   **Narration**: While playing the video, you can act like a sports commentator, pointing out key interactions to the audience. For example: "As you can see, the red robot (high energy) in the upper right corner, with sufficient energy, actively pursued and collided with the low-energy blue robot in the lower left corner just as it was about to reach a charging station, effectively destroying it. This is a classic example of aggression and resource plundering behavior."
+
+## 7. Conclusion
+
+The implementation of this project uses a standard and clearly structured **Independent Deep Q-Network (IDQN)** approach. Each agent learns independently, but their learning environment (including the behavior of other agents) is dynamic. The reward function's design directly encourages energy management and survival, providing a solid foundation for observing the emergence of complex group strategies such as "aggression" and "avoidance."
