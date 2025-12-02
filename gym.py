@@ -261,10 +261,10 @@ class RobotVacuumGymEnv:
                 'position': (robot['x'], robot['y']),
                 'is_active': robot['is_active'],
                 'is_dead': not robot['is_active'],  # For kill analysis
+                'is_mover_this_step': robot['is_mover_this_step'],  # 本回合是否主動移動 (用於 kill 歸屬分析)
                 'charge_count': robot['charge_count'],  # Keep for backwards compatibility
                 'total_charges': robot['charge_count'],  # Cumulative charges (same as charge_count)
                 'total_non_home_charges': robot['non_home_charge_count'],  # Cumulative non-home charges
-                'total_agent_collisions': robot['agent_collision_count'],  # Cumulative agent collisions (deprecated)
                 'total_active_collisions': robot['active_collision_count'],  # 主動碰撞總次數
                 'total_passive_collisions': robot['passive_collision_count'],  # 被碰撞總次數
                 'active_collisions_with_0': robot['active_collisions_with'][0],  # 主動碰撞 robot 0 次數

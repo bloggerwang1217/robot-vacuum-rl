@@ -122,10 +122,10 @@ class RobotVacuumEnv:
                 'energy': self.robot_energies[i],  # 使用個別血量
                 'max_energy': self.robot_energies[i],  # 記錄最大血量
                 'is_active': True,
+                'is_mover_this_step': False,  # 本回合是否主動移動 (用於 kill 歸屬分析)
                 'charge_count': 0,
                 'non_home_charge_count': 0,  # 在非初始充電座充電的次數
                 'home_charger': (y, x),  # 記錄機器人的初始充電座位置
-                'agent_collision_count': 0,  # 與其他機器人碰撞次數 (deprecated: 舊的總計)
                 'active_collision_count': 0,  # 主動移動過去碰撞的次數
                 'passive_collision_count': 0,  # 被碰撞的次數
                 'active_collisions_with': {0: 0, 1: 0, 2: 0, 3: 0},  # 主動碰撞各機器人的次數
@@ -149,10 +149,11 @@ class RobotVacuumEnv:
         """
         from collections import Counter
 
-        # 0. 清除上一回合的碰撞記錄
+        # 0. 清除上一回合的碰撞記錄，並重置 is_mover_this_step 旗標
         for robot in self.robots:
             robot['collided_with_agent_id'] = None
-        
+            robot['is_mover_this_step'] = False
+
         if all(not r['is_active'] for r in self.robots):
             self.current_step += 1
             return self.get_global_state(), self.current_step >= self.n_steps
@@ -168,6 +169,8 @@ class RobotVacuumEnv:
             if action == self.ACTION_STAY:
                 staying_robots[i] = (robot['y'], robot['x'])
             else:
+                # 設定 is_mover_this_step 為 True（主動移動）
+                robot['is_mover_this_step'] = True
                 py, px = robot['y'], robot['x']
                 if action == self.ACTION_UP: py -= 1
                 elif action == self.ACTION_DOWN: py += 1
