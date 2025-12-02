@@ -55,6 +55,21 @@ class ModelEvaluator:
         ]
         self.robot_energies = robot_energies
 
+        # Parse charger positions if provided
+        charger_positions = None
+        if args.charger_positions is not None:
+            try:
+                # Parse format: "y1,x1;y2,x2;y3,x3;y4,x4"
+                charger_positions = []
+                for pos_str in args.charger_positions.split(';'):
+                    y, x = map(int, pos_str.split(','))
+                    charger_positions.append((y, x))
+                print(f"Using custom charger positions: {charger_positions}")
+            except Exception as e:
+                print(f"Error parsing charger positions: {e}")
+                print("Using default (four corners)")
+                charger_positions = None
+
         # Environment setup (render_mode based on args)
         render_mode = "human" if args.render else None
         self.env = RobotVacuumGymEnv(
@@ -68,14 +83,15 @@ class ModelEvaluator:
             e_collision_active_two_sided=args.e_collision_active_two_sided,
             e_collision_passive=args.e_collision_passive,
             n_steps=args.max_steps,  # Use max_steps for single long episode
-            render_mode=render_mode
+            render_mode=render_mode,
+            charger_positions=charger_positions
         )
 
         # Initialize agents
         self.agent_ids = ['robot_0', 'robot_1', 'robot_2', 'robot_3']
         self.agents = {}
 
-        observation_dim = 20  # Actual observation dimension used in training
+        observation_dim = self.env.observation_space.shape[0]  # Get actual observation dim from env
         action_dim = 5  # UP, DOWN, LEFT, RIGHT, STAY
 
         # Create a dummy args object for agent initialization
@@ -514,6 +530,8 @@ def main():
     parser.add_argument("--e-collision-active-one-sided", type=int, default=None, help="Damage for active robot in one-sided collision")
     parser.add_argument("--e-collision-active-two-sided", type=int, default=None, help="Damage for active robot in two-sided collision")
     parser.add_argument("--e-collision-passive", type=int, default=None, help="Damage for passive robot in one-sided collision")
+    parser.add_argument("--charger-positions", type=str, default=None,
+                       help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')
 
     # Simulation settings
     parser.add_argument("--max-steps", type=int, default=10000, help="Maximum steps for single long episode")
