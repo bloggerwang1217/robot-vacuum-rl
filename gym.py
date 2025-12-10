@@ -208,10 +208,10 @@ class RobotVacuumGymEnv:
         計算每個機器人的獎勵
 
         獎勵結構:
-        1. 能量變化獎勵: energy_delta * 0.01
-        2. 充電獎勵: +0.5
-        3. 死亡懲罰: -5.0
-        4. 存活獎勵: +0.01
+        1. 能量變化獎勵: energy_delta * 0.05
+        2. 充電獎勵: +10.0
+        3. 死亡懲罰: -100.0
+        4. 存活獎勵: +0.1
         """
         rewards = {}
         robots = state['robots']
@@ -225,19 +225,19 @@ class RobotVacuumGymEnv:
 
             # 1. 能量變化獎勵
             energy_delta = robot['energy'] - prev_robot['energy']
-            reward += energy_delta * 0.01
+            reward += energy_delta * 0.05
 
-            # 2. 充電獎勵
+            # 2. 充電獎勵 (提升 10 倍: 0.5 → 5.0)
             if robot['charge_count'] > prev_robot['charge_count']:
-                reward += 0.5
+                reward += 10.0
 
             # 3. 死亡懲罰
             if not robot['is_active'] and prev_robot['is_active']:
-                reward -= 5.0
+                reward -= 100.0
 
-            # 4. 存活獎勵
+            # 4. 存活獎勵 (提升 10 倍: 0.01 → 0.1)
             if robot['is_active']:
-                reward += 0.01
+                reward += 0.1
 
             rewards[agent_id] = reward
 
@@ -259,6 +259,13 @@ class RobotVacuumGymEnv:
             if robot['collided_with_agent_id'] is not None:
                 collided_with = self.agent_ids[robot['collided_with_agent_id']]
 
+            # 從 collision_events 計算被各個機器人碰撞的次數
+            collided_by_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+            for event in robot['collision_events']:
+                opponent_id = event['opponent_id']
+                if opponent_id >= 0:  # 忽略邊界碰撞 (-1)
+                    collided_by_counts[opponent_id] += 1
+
             infos[agent_id] = {
                 'energy': robot['energy'],
                 'position': (robot['x'], robot['y']),
@@ -275,10 +282,10 @@ class RobotVacuumGymEnv:
                 'active_collisions_with_1': robot['active_collisions_with'][1],  # 主動碰撞 robot 1 次數
                 'active_collisions_with_2': robot['active_collisions_with'][2],  # 主動碰撞 robot 2 次數
                 'active_collisions_with_3': robot['active_collisions_with'][3],  # 主動碰撞 robot 3 次數
-                'collided_by_robot_0': robot['collided_by_counts'][0],  # 被 robot 0 碰撞次數
-                'collided_by_robot_1': robot['collided_by_counts'][1],  # 被 robot 1 碰撞次數
-                'collided_by_robot_2': robot['collided_by_counts'][2],  # 被 robot 2 碰撞次數
-                'collided_by_robot_3': robot['collided_by_counts'][3],  # 被 robot 3 碰撞次數
+                'collided_by_robot_0': collided_by_counts[0],  # 被 robot 0 碰撞次數 (從 collision_events 計算)
+                'collided_by_robot_1': collided_by_counts[1],  # 被 robot 1 碰撞次數 (從 collision_events 計算)
+                'collided_by_robot_2': collided_by_counts[2],  # 被 robot 2 碰撞次數 (從 collision_events 計算)
+                'collided_by_robot_3': collided_by_counts[3],  # 被 robot 3 碰撞次數 (從 collision_events 計算)
                 'collided_with_agent_id': collided_with,  # For kill analysis (converted to agent_id string)
                 'step': state['current_step']
             }

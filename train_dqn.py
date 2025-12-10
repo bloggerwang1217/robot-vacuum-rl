@@ -78,26 +78,34 @@ class IndependentDQNAgent:
         # Counters
         self.train_count = 0
 
-    def select_action(self, observation: np.ndarray, eval_mode: bool = False) -> int:
+    def select_action(self, observation: np.ndarray, eval_mode: bool = False, return_q_values: bool = False):
         """
         Select action using epsilon-greedy strategy
 
         Args:
             observation: Current observation
             eval_mode: Whether in evaluation mode (uses eval_epsilon)
+            return_q_values: If True, also return Q-values for all actions
 
         Returns:
-            Selected action
+            action (int) if return_q_values=False
+            (action, q_values) if return_q_values=True
         """
         epsilon = self.eval_epsilon if eval_mode else self.epsilon
-
-        if random.random() < epsilon:
-            return random.randint(0, self.action_dim - 1)
 
         state_tensor = torch.from_numpy(observation).float().unsqueeze(0).to(self.device)
         with torch.no_grad():
             q_values = self.q_net(state_tensor)
-        return q_values.argmax().item()
+
+        if random.random() < epsilon:
+            action = random.randint(0, self.action_dim - 1)
+        else:
+            action = q_values.argmax().item()
+
+        if return_q_values:
+            return action, q_values.squeeze(0).cpu().numpy()
+        else:
+            return action
 
     def remember(self, state, action, reward, next_state, done):
         """
@@ -230,9 +238,6 @@ class MultiAgentTrainer:
             e_move=args.e_move,
             e_charge=args.e_charge,
             e_collision=args.e_collision,
-            e_collision_active_one_sided=args.e_collision_active_one_sided,
-            e_collision_active_two_sided=args.e_collision_active_two_sided,
-            e_collision_passive=args.e_collision_passive,
             n_steps=args.max_episode_steps,
             charger_positions=charger_positions
         )
@@ -395,7 +400,13 @@ class MultiAgentTrainer:
                 step_count += 1
 
                 # Check episode termination
-                if any(terminations.values()) or any(truncations.values()):
+                # End Episode if：
+                # 1. Only one robot survives
+                # 2. All robots are dead
+                # 3. Reach max_steps (truncation)
+                alive_count = sum(1 for agent_id in self.agent_ids if not terminations.get(agent_id, False))
+
+                if alive_count <= 1 or any(truncations.values()):
                     done = True
 
             # Episode summary
@@ -499,6 +510,7 @@ class MultiAgentTrainer:
 
         # Add per-agent metrics to wandb
         for agent_id in self.agent_ids:
+            log_dict[f"{agent_id}/reward_per_episode"] = episode_rewards[agent_id]
             log_dict[f"{agent_id}/collisions_per_episode"] = per_agent_collisions[agent_id]
             log_dict[f"{agent_id}/charges_per_episode"] = per_agent_charges[agent_id]
             log_dict[f"{agent_id}/non_home_charges_per_episode"] = per_agent_non_home_charges[agent_id]
@@ -508,7 +520,7 @@ class MultiAgentTrainer:
             log_dict[f"{agent_id}/final_energy"] = per_agent_energies[agent_id]
             log_dict[f"{agent_id}/final_position_x"] = per_agent_positions[agent_id][0]
             log_dict[f"{agent_id}/final_position_y"] = per_agent_positions[agent_id][1]
-            
+
             # Add collided_by metrics
             log_dict[f"{agent_id}/collided_by_robot_0"] = final_infos.get(agent_id, {}).get('collided_by_robot_0', 0)
             log_dict[f"{agent_id}/collided_by_robot_1"] = final_infos.get(agent_id, {}).get('collided_by_robot_1', 0)
@@ -589,10 +601,7 @@ def main():
     parser.add_argument("--robot-3-energy", type=int, default=None, help="Initial energy for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
-    parser.add_argument("--e-collision", type=int, default=3, help="Default energy loss per collision (used as fallback)")
-    parser.add_argument("--e-collision-active-one-sided", type=int, default=None, help="Damage for active robot in one-sided collision")
-    parser.add_argument("--e-collision-active-two-sided", type=int, default=None, help="Damage for active robot in two-sided collision")
-    parser.add_argument("--e-collision-passive", type=int, default=None, help="Damage for passive robot in one-sided collision")
+    parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision (互撞或被推人時的傷害)")
     parser.add_argument("--max-episode-steps", type=int, default=500, help="Maximum steps per episode")
     parser.add_argument("--charger-positions", type=str, default=None,
                        help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')

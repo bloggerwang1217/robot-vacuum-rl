@@ -41,12 +41,12 @@ class TrainingLogParser:
         """Parse the log file and extract metrics"""
 
         # Pattern to match episode lines
-        # Example: [Episode 0] Steps: 41 | Survival: 2/4 | Mean Reward: 0.33 | Collisions: 23 | Kills: 2
-        episode_pattern = r'\[Episode (\d+)\] Steps: (\d+) \| Survival: (\d+)/\d+ \| Mean Reward: ([-\d.]+) \| Collisions: (\d+) \| Kills: (\d+)'
+        # Example: [Episode 0] Steps: 41 | Survival: 2/4 | Mean Reward: 0.33 | Collisions: 23 | Immediate Kills: 2 | Non-Home Charges: 5
+        episode_pattern = r'\[Episode (\d+)\] Steps: (\d+) \| Survival: (\d+)/\d+ \| Mean Reward: ([-\d.]+) \| Collisions: (\d+) \| Immediate Kills: (\d+)'
 
         # Pattern to match key model saves
-        # Example: [Key Model Saved] Episode 0: New record of 2 kills!
-        key_model_pattern = r'\[Key Model Saved\] Episode (\d+): New record of (\d+) kills!'
+        # Example: [Key Model Saved] Episode 0: New record of 2 immediate kills!
+        key_model_pattern = r'\[Key Model Saved\] Episode (\d+): New record of (\d+) immediate kills!'
 
         with open(self.log_file, 'r') as f:
             for line in f:
@@ -126,9 +126,9 @@ class TrainingVisualizer:
         self._plot_metric_with_smoothing(ax4, 'collisions', 'Agent Collisions',
                                         color='#F18F01', window_size=window_size)
 
-        # 5. Kills over time
+        # 5. Immediate Kills over time
         ax5 = fig.add_subplot(gs[1, 2])
-        self._plot_metric_with_smoothing(ax5, 'kills', 'Kills per Episode',
+        self._plot_metric_with_smoothing(ax5, 'kills', 'Immediate Kills per Episode',
                                         color='#C73E1D', window_size=window_size)
 
         # 6. Reward distribution (histogram)
@@ -288,7 +288,7 @@ class TrainingVisualizer:
         metrics_to_compare = ['mean_reward', 'steps', 'survival',
                              'collisions', 'kills']
         titles = ['Mean Reward', 'Episode Length', 'Survival Count',
-                 'Collisions', 'Kills']
+                 'Collisions', 'Immediate Kills']
 
         for idx, (metric, title) in enumerate(zip(metrics_to_compare, titles)):
             ax = axes[idx // 3, idx % 3]
@@ -329,10 +329,10 @@ def print_summary_report(stats: Dict, run_name: str):
     print(f"Average Survival:      {stats['avg_survival']:.2f}/4")
     print(f"Average Reward:        {stats['avg_reward']:.2f}")
     print(f"Average Collisions:    {stats['avg_collisions']:.2f}")
-    print(f"Average Kills:         {stats['avg_kills']:.2f}")
+    print(f"Average Immediate Kills: {stats['avg_kills']:.2f}")
     print("-"*70)
     print(f"Max Reward:            {stats['max_reward']:.2f}")
-    print(f"Max Kills:             {stats['max_kills']}")
+    print(f"Max Immediate Kills:   {stats['max_kills']}")
     print(f"Max Steps:             {stats['max_steps']}")
     print("-"*70)
     print(f"Final 10-ep Avg Reward: {stats['final_reward']:.2f}")

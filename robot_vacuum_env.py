@@ -70,17 +70,10 @@ class RobotVacuumEnv:
         self.robot_energies = config.get('robot_energies', [self.initial_energy] * 4)
         self.e_move = config['e_move']
         self.e_charge = config['e_charge']
-        self.e_collision_default = config.get('e_collision', 3)
-        
-        # Robustly handle None values for new collision parameters
-        active_one_sided = config.get('e_collision_active_one_sided')
-        self.e_collision_active_one_sided = active_one_sided if active_one_sided is not None else self.e_collision_default
-
-        active_two_sided = config.get('e_collision_active_two_sided')
-        self.e_collision_active_two_sided = active_two_sided if active_two_sided is not None else self.e_collision_default
-
-        passive = config.get('e_collision_passive')
-        self.e_collision_passive = passive if passive is not None else self.e_collision_default
+        # 碰撞傷害參數（統一使用 e_collision）
+        # 互撞時（swap 或 contested）：雙方都受傷
+        # 被單方面推人時：被推方受傷
+        self.e_collision = config.get('e_collision', 3)
         self.n_steps = config['n_steps']
         self.epsilon = config.get('epsilon', 0.2)  # 預設探索率 20%
 
@@ -161,8 +154,9 @@ class RobotVacuumEnv:
                 'active_collision_count': 0,  # 主動移動過去碰撞的次數
                 'passive_collision_count': 0,  # 被碰撞的次數
                 'active_collisions_with': {0: 0, 1: 0, 2: 0, 3: 0},  # 主動碰撞各機器人的次數
-                'collided_with_agent_id': None,  # 本回合碰撞的對象 (用於 kill 分析)
-                'collided_by_counts': {0: 0, 1: 0, 2: 0, 3: 0}  # 被各個機器人碰撞的次數
+                'collided_with_agent_id': None,  # 本回合碰撞的對象 (用於 kill 分析，僅記錄最後一次)
+                'collided_by_counts': {0: 0, 1: 0, 2: 0, 3: 0},  # 被各個機器人碰撞的次數
+                'collision_events': []  # 完整碰撞歷史 [(step, attacker_id, collision_type), ...]
             }
             self.robots.append(robot)
 
@@ -212,7 +206,8 @@ class RobotVacuumEnv:
 
         # 2. 判定所有移動機器人的碰撞事件類型
         collision_events = {}  # {robot_id: "reason_string"}
-        
+        knockback_targets = {}  # {robot_id: new_pos} - 被推開的機器人的新位置
+
         # 2a. 找出被多個機器人搶佔的格子
         contested_cells = {pos for pos, count in Counter(moving_robots.values()).items() if count > 1}
 
@@ -236,20 +231,113 @@ class RobotVacuumEnv:
         for robot_id, planned_pos in moving_robots.items():
             if robot_id in collision_events: continue
             py, px = planned_pos
-            
+
             if not (0 <= px < self.n and 0 <= py < self.n):
                 collision_events[robot_id] = "boundary"
             elif planned_pos in staying_robots.values():
-                collision_events[robot_id] = "stationary"
+                # 找到被碰撞的靜止機器人
+                victim_id = None
                 for stay_id, stay_pos in staying_robots.items():
                     if planned_pos == stay_pos:
-                        self.robots[robot_id]['collided_with_agent_id'] = stay_id
-                        self.robots[stay_id]['collided_with_agent_id'] = robot_id
+                        victim_id = stay_id
+                        break
+
+                if victim_id is not None:
+                    # 計算推回方向：從 moving robot 的原位置指向 victim
+                    mover_y, mover_x = self.robots[robot_id]['y'], self.robots[robot_id]['x']
+                    victim_y, victim_x = self.robots[victim_id]['y'], self.robots[victim_id]['x']
+
+                    # 推回方向 = victim 位置 - mover 原位置
+                    dy = victim_y - mover_y
+                    dx = victim_x - mover_x
+
+                    # victim 的新位置（被推出去）
+                    new_victim_y = victim_y + dy
+                    new_victim_x = victim_x + dx
+
+                    # 檢查新位置是否有效（在地圖內且沒有其他機器人）
+                    if 0 <= new_victim_x < self.n and 0 <= new_victim_y < self.n:
+                        # 檢查是否有其他移動機器人試圖進入該位置
+                        can_push = True
+                        for other_id, other_planned in moving_robots.items():
+                            if other_id != robot_id and other_planned == (new_victim_y, new_victim_x):
+                                can_push = False
+                                break
+
+                        # 檢查是否有其他停留機器人在該位置
+                        if can_push:
+                            for stay_id, stay_pos in staying_robots.items():
+                                if stay_id != victim_id and stay_pos == (new_victim_y, new_victim_x):
+                                    can_push = False
+                                    break
+
+                        if can_push:
+                            # 成功推回
+                            collision_events[robot_id] = "knockback_success"
+                            knockback_targets[victim_id] = (new_victim_y, new_victim_x)
+                            self.robots[robot_id]['collided_with_agent_id'] = victim_id
+                            self.robots[victim_id]['collided_with_agent_id'] = robot_id
+                            # 記錄完整碰撞歷史
+                            self.robots[robot_id]['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': victim_id,
+                                'collision_type': 'knockback_success'
+                            })
+                            self.robots[victim_id]['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': robot_id,
+                                'collision_type': 'knockback_success'
+                            })
+                        else:
+                            # 無路可推
+                            collision_events[robot_id] = "stationary_blocked"
+                            self.robots[robot_id]['collided_with_agent_id'] = victim_id
+                            self.robots[victim_id]['collided_with_agent_id'] = robot_id
+                            # 記錄完整碰撞歷史
+                            self.robots[robot_id]['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': victim_id,
+                                'collision_type': 'stationary_blocked'
+                            })
+                            self.robots[victim_id]['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': robot_id,
+                                'collision_type': 'stationary_blocked'
+                            })
+                    else:
+                        # 無路可推（邊界外）
+                        collision_events[robot_id] = "stationary_blocked"
+                        self.robots[robot_id]['collided_with_agent_id'] = victim_id
+                        self.robots[victim_id]['collided_with_agent_id'] = robot_id
+                        # 記錄完整碰撞歷史
+                        self.robots[robot_id]['collision_events'].append({
+                            'step': self.current_step,
+                            'opponent_id': victim_id,
+                            'collision_type': 'stationary_blocked'
+                        })
+                        self.robots[victim_id]['collision_events'].append({
+                            'step': self.current_step,
+                            'opponent_id': robot_id,
+                            'collision_type': 'stationary_blocked'
+                        })
+
             elif planned_pos in contested_cells:
                 collision_events[robot_id] = "contested"
                 for other_id, other_pos in moving_robots.items():
                     if robot_id != other_id and planned_pos == other_pos:
                         self.robots[robot_id]['collided_with_agent_id'] = other_id
+                        # 記錄完整碰撞歷史（只記錄一次，避免重複）
+                        if robot_id < other_id:  # 只讓較小的 ID 記錄，避免兩次記錄同一碰撞
+                            self.robots[robot_id]['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': other_id,
+                                'collision_type': 'contested'
+                            })
+                            self.robots[other_id]['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': robot_id,
+                                'collision_type': 'contested'
+                            })
                         break
         
         # 3. 結算所有機器的狀態
@@ -258,37 +346,79 @@ class RobotVacuumEnv:
             robot = self.robots[robot_id]
             if robot_id in collision_events:
                 reason = collision_events[robot_id]
-                # 判斷並應用不同傷害
-                if reason in ["swap", "contested"]:
-                    robot['energy'] -= self.e_collision_active_two_sided
-                else: # "boundary", "stationary"
-                    robot['energy'] -= self.e_collision_active_one_sided
-                
-                robot['active_collision_count'] += 1
-                if robot['collided_with_agent_id'] is not None:
-                     robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
+
+                if reason == "knockback_success":
+                    # 成功推開對方：attacker 進入 victim 的位置，無碰撞傷害
+                    robot['y'], robot['x'] = planned_pos
+                    robot['active_collision_count'] += 1
+                    if robot['collided_with_agent_id'] is not None:
+                        robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
+
+                elif reason == "stationary_blocked":
+                    # 無路可推：attacker 停留，無碰撞傷害
+                    robot['active_collision_count'] += 1
+                    if robot['collided_with_agent_id'] is not None:
+                        robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
+
+                elif reason in ["swap", "contested"]:
+                    # 互撞：雙方停留，都受傷
+                    robot['energy'] -= self.e_collision
+                    robot['active_collision_count'] += 1
+                    if robot['collided_with_agent_id'] is not None:
+                        robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
+
+                elif reason == "boundary":
+                    # 撞牆：停留原位，受傷
+                    robot['energy'] -= self.e_collision
+                    robot['active_collision_count'] += 1
+                    # 記錄撞牆事件
+                    robot['collision_events'].append({
+                        'step': self.current_step,
+                        'opponent_id': -1,  # -1 表示邊界
+                        'collision_type': 'boundary'
+                    })
             else:
                 # 移動成功
                 robot['y'], robot['x'] = planned_pos
-                robot['energy'] -= self.e_move
 
-        # 3b. 處理停留的機器人
+        # 3b. 處理停留的機器人（包括被推開的機器人）
         for robot_id, pos in staying_robots.items():
             robot = self.robots[robot_id]
-            # 如果被撞
-            if robot['collided_with_agent_id'] is not None:
-                robot['energy'] -= self.e_collision_passive
+
+            # 檢查是否被推開
+            if robot_id in knockback_targets:
+                # 被推開：移動到新位置，受傷害
+                new_pos = knockback_targets[robot_id]
+                robot['y'], robot['x'] = new_pos
+                robot['energy'] -= self.e_collision
                 robot['passive_collision_count'] += 1
                 aggressor_id = robot['collided_with_agent_id']
-                robot['collided_by_counts'][aggressor_id] += 1
+                if aggressor_id is not None:
+                    robot['collided_by_counts'][aggressor_id] += 1
+            else:
+                # 沒有被推開：停留原位
+                # 如果被撞且沒有被推開（即 stationary_blocked 情況）
+                if robot['collided_with_agent_id'] is not None:
+                    robot['energy'] -= self.e_collision
+                    robot['passive_collision_count'] += 1
+                    aggressor_id = robot['collided_with_agent_id']
+                    robot['collided_by_counts'][aggressor_id] += 1
 
-            # 如果在充電座上
-            if self.static_grid[pos[0], pos[1]] == self.CHARGER:
-                robot['energy'] += self.e_charge
-                robot['charge_count'] += 1
-                # 只在有 home_charger 的情況下才統計 non_home_charge
-                if robot['home_charger'] is not None and pos != robot['home_charger']:
-                    robot['non_home_charge_count'] += 1
+        # 3c. 檢查所有機器人最終位置是否在充電座上（無論執行什麼動作）
+        # 先充電，再扣生存成本（讓敵人更有動機去充電座）
+        for i, robot in enumerate(self.robots):
+            if robot['is_active']:
+                if self.static_grid[robot['y'], robot['x']] == self.CHARGER:
+                    robot['energy'] += self.e_charge
+                    robot['charge_count'] += 1
+                    # 只在有 home_charger 的情況下才統計 non_home_charge
+                    if robot['home_charger'] is not None and (robot['y'], robot['x']) != robot['home_charger']:
+                        robot['non_home_charge_count'] += 1
+
+        # 3d. 扣除所有活著機器人的生存成本
+        for robot in self.robots:
+            if robot['is_active']:
+                robot['energy'] -= self.e_move
 
         # 4. 更新所有機器人的關機狀態
         for robot in self.robots:
