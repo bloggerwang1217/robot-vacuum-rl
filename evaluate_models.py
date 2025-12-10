@@ -79,9 +79,6 @@ class ModelEvaluator:
             e_move=args.e_move,
             e_charge=args.e_charge,
             e_collision=args.e_collision,
-            e_collision_active_one_sided=args.e_collision_active_one_sided,
-            e_collision_active_two_sided=args.e_collision_active_two_sided,
-            e_collision_passive=args.e_collision_passive,
             n_steps=args.max_steps,  # Use max_steps for single long episode
             render_mode=render_mode,
             charger_positions=charger_positions
@@ -156,17 +153,32 @@ class ModelEvaluator:
 
         episode_rewards = {agent_id: 0.0 for agent_id in self.agent_ids}
         episode_infos_history = []
+        episode_actions_history = []
+        episode_q_values_history = []  # Store Q-values for debugging
         step_count = 0
         done = False
 
         # Main simulation loop
+        action_names = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'STAY']
         while not done:
             # Select actions for all agents (in eval mode)
             actions = []
+            step_q_values = {}  # Store Q-values for this step
             for agent_id in self.agent_ids:
                 obs = observations[agent_id]
-                action = self.agents[agent_id].select_action(obs, eval_mode=True)
+                action, q_values = self.agents[agent_id].select_action(obs, eval_mode=True, return_q_values=True)
                 actions.append(action)
+
+                # Store Q-values
+                step_q_values[agent_id] = {
+                    action_names[i]: float(q_values[i])
+                    for i in range(len(action_names))
+                }
+
+                # Print Q-values for this step (debug output)
+                q_str = ", ".join([f"{action_names[i]}:{q_values[i]:.3f}" for i in range(len(action_names))])
+                selected_marker = " 👈" if True else ""
+                print(f"  {agent_id} Q-values: [{q_str}] Selected: {action_names[action]}{selected_marker}")
 
             # Step environment
             next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
@@ -175,8 +187,10 @@ class ModelEvaluator:
             if self.args.render:
                 self.env.render()
 
-            # Store infos for analysis
+            # Store actions, infos, and Q-values for analysis and replay
+            episode_actions_history.append(actions)
             episode_infos_history.append(infos)
+            episode_q_values_history.append(step_q_values)
 
             # Accumulate rewards
             for agent_id in self.agent_ids:
@@ -213,7 +227,11 @@ class ModelEvaluator:
 
         # Final summary
         final_stats = self.log_final_summary(step_count, episode_rewards, episode_infos_history)
-        
+
+        # Save replay data for visualization
+        replay_file = self.save_replay(episode_actions_history, episode_infos_history, episode_q_values_history, step_count)
+        print(f"\nReplay data saved to: {replay_file}")
+
         return final_stats
 
     def log_step_summary(self, step: int, episode_rewards: Dict[str, float],
@@ -467,6 +485,143 @@ class ModelEvaluator:
             'total_immediate_kills': total_immediate_kills,
         }
 
+    def save_replay(self, episode_actions: List[List[int]], episode_infos: List[Dict],
+                   episode_q_values: List[Dict], total_steps: int) -> str:
+        """
+        Save episode replay data as JSON for visualization with pygame
+
+        Args:
+            episode_actions: List of action lists (each step has 4 actions, one per robot)
+            episode_infos: List of info dicts from environment
+            episode_q_values: List of Q-value dicts for each step
+            total_steps: Total number of steps in episode
+
+        Returns:
+            Path to saved replay file
+        """
+        import json
+        from pathlib import Path
+
+        action_names = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'STAY']
+
+        # Build replay data structure
+        replay_data = {
+            "config": {
+                "grid_size": self.args.env_n,
+                "charger_positions": self._parse_charger_positions(),
+                "robot_initial_energies": {
+                    "robot_0": self.robot_energies[0],
+                    "robot_1": self.robot_energies[1],
+                    "robot_2": self.robot_energies[2],
+                    "robot_3": self.robot_energies[3],
+                },
+                "parameters": {
+                    "e_move": self.args.e_move,
+                    "e_collision": self.args.e_collision,
+                    "e_charge": self.args.e_charge,
+                }
+            },
+            "steps": []
+        }
+
+        # Process each step
+        for step_idx in range(total_steps):
+            actions = episode_actions[step_idx]
+            infos = episode_infos[step_idx]
+            q_values = episode_q_values[step_idx]
+
+            # Build step data
+            step_data = {
+                "step": step_idx,
+                "actions": {
+                    f"robot_{i}": action_names[actions[i]]
+                    for i in range(4)
+                },
+                "q_values": q_values,  # Store Q-values for each robot
+                "robots": {}
+            }
+
+            # Extract robot state at this step
+            for agent_id in self.agent_ids:
+                agent_info = infos.get(agent_id, {})
+                pos = agent_info.get('position', (0, 0))
+
+                step_data["robots"][agent_id] = {
+                    "position": list(pos),
+                    "energy": agent_info.get('energy', 0),
+                    "is_dead": agent_info.get('is_dead', False),
+                }
+
+            # Extract events from this step (collisions, charges, deaths)
+            events = []
+
+            # Check for collisions
+            for agent_id in self.agent_ids:
+                agent_info = infos.get(agent_id, {})
+                collision_target = agent_info.get('collided_with_agent_id', None)
+
+                if collision_target is not None:
+                    damage = self.args.e_collision
+                    events.append({
+                        "type": "collision",
+                        "attacker": agent_id,
+                        "victim": collision_target,
+                        "damage": damage
+                    })
+
+            # Check for charges
+            for agent_id in self.agent_ids:
+                agent_info = infos.get(agent_id, {})
+                if agent_info.get('total_charges', 0) > 0 and step_idx == 0:
+                    # First occurrence of charges, check if this step incremented it
+                    pass  # This is complex to track per-step, mark for simplicity
+                # For now, we'll skip per-step charge tracking as it requires state diff
+
+            # Check for deaths (death happens when energy <= 0)
+            if step_idx > 0:
+                prev_infos = episode_infos[step_idx - 1]
+                for agent_id in self.agent_ids:
+                    prev_dead = prev_infos.get(agent_id, {}).get('is_dead', False)
+                    curr_dead = infos.get(agent_id, {}).get('is_dead', False)
+
+                    if not prev_dead and curr_dead:
+                        events.append({
+                            "type": "death",
+                            "robot": agent_id,
+                            "cause": "energy_depleted"
+                        })
+
+            step_data["events"] = events
+            replay_data["steps"].append(step_data)
+
+        # Save to JSON file
+        # Determine output path based on wandb run name or default
+        run_name = self.args.wandb_run_name if hasattr(self.args, 'wandb_run_name') else "replay"
+        replay_dir = Path(self.args.model_dir).parent  # Save in same directory as model
+        replay_file = replay_dir / f"{run_name}_replay.json"
+
+        with open(replay_file, 'w') as f:
+            json.dump(replay_data, f, indent=2)
+
+        return str(replay_file)
+
+    def _parse_charger_positions(self) -> List[List[int]]:
+        """Parse charger positions from args"""
+        if self.args.charger_positions is None:
+            return [[0, 0], [0, self.args.env_n-1],
+                    [self.args.env_n-1, 0], [self.args.env_n-1, self.args.env_n-1]]
+
+        try:
+            positions = []
+            for pos_str in self.args.charger_positions.split(';'):
+                y, x = map(int, pos_str.split(','))
+                positions.append([y, x])
+            return positions
+        except:
+            # Default to four corners
+            return [[0, 0], [0, self.args.env_n-1],
+                    [self.args.env_n-1, 0], [self.args.env_n-1, self.args.env_n-1]]
+
 
     def compute_immediate_kills(self, episode_infos: List[Dict]) -> Tuple[int, Dict[str, int]]:
         """
@@ -526,10 +681,7 @@ def main():
     parser.add_argument("--robot-3-energy", type=int, default=None, help="Initial energy for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
-    parser.add_argument("--e-collision", type=int, default=3, help="Default energy loss per collision (used as fallback)")
-    parser.add_argument("--e-collision-active-one-sided", type=int, default=None, help="Damage for active robot in one-sided collision")
-    parser.add_argument("--e-collision-active-two-sided", type=int, default=None, help="Damage for active robot in two-sided collision")
-    parser.add_argument("--e-collision-passive", type=int, default=None, help="Damage for passive robot in one-sided collision")
+    parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision (互撞或被推人時的傷害)")
     parser.add_argument("--charger-positions", type=str, default=None,
                        help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')
 
