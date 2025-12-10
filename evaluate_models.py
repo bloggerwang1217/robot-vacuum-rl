@@ -148,8 +148,8 @@ class ModelEvaluator:
         print(f"Eval Epsilon: {self.args.eval_epsilon}")
         print(f"{'=' * 60}\n")
 
-        # Reset environment
-        observations, infos = self.env.reset()
+        # Reset environment with seed if provided
+        observations, infos = self.env.reset(seed=self.args.seed)
 
         episode_rewards = {agent_id: 0.0 for agent_id in self.agent_ids}
         episode_infos_history = []

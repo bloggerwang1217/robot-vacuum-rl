@@ -34,19 +34,26 @@ except ImportError:
 class ReplayVisualizer:
     """Visualize robot vacuum episode replay using pygame"""
 
-    def __init__(self, replay_file: str, speed: float = 1.0, cell_size: int = 60):
+    def __init__(self, replay_file: str, speed: float = 2.0, cell_size: int = 60):
         """
         Initialize replay visualizer
 
         Args:
             replay_file: Path to JSON replay file
-            speed: Initial playback speed (1.0 = 1 step per frame at 60 FPS)
+            speed: Initial playback speed (steps per second, default 2.0)
             cell_size: Size of each grid cell in pixels
         """
         self.replay_file = Path(replay_file)
         self.cell_size = cell_size
-        self.speed = speed
+        self.speed = speed / 60.0
         self.step_accumulator = 0
+        self.button_height = 40
+        self.button_width = 100
+        self.buttons = []
+        
+        # Recording state
+        self.is_recording = False
+        self.recorded_frames = []
 
         # Load replay data
         self.replay_data = self._load_replay()
@@ -58,9 +65,10 @@ class ReplayVisualizer:
         self.clock = None
 
         # Playback state
-        self.current_step = 0
-        self.is_paused = False
+        self.current_step = -1  # Start at -1 so step 0 shows initial state
+        self.is_paused = True  # Start paused
         self.is_running = True
+        self.last_recorded_step = -2  # Track last recorded step
 
         # Colors
         self.COLORS = {
@@ -108,14 +116,14 @@ class ReplayVisualizer:
         grid_size = config['grid_size']
 
         # Window dimensions
-        self.window_width = grid_size * self.cell_size + 300  # Extra space for info panel
-        self.window_height = grid_size * self.cell_size + 100  # Extra space for controls
+        self.window_width = grid_size * self.cell_size + 500  # Extra space for info panel with Q-values
+        self.window_height = grid_size * self.cell_size + 160  # Extra space for two rows of buttons
 
         self.screen = pygame.display.set_mode((self.window_width, self.window_height))
         pygame.display.set_caption(f"Robot Vacuum Replay - {self.replay_file.name}")
 
-        self.font_large = pygame.font.Font(None, 24)
-        self.font_small = pygame.font.Font(None, 18)
+        self.font_large = pygame.font.SysFont(None, 24)
+        self.font_small = pygame.font.SysFont(None, 18)
         self.clock = pygame.time.Clock()
 
     def run(self):
@@ -156,6 +164,10 @@ class ReplayVisualizer:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.is_running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                for rect, callback, label in self.buttons:
+                    if rect.collidepoint(event.pos) and callback is not None:
+                        callback()
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     self.is_paused = not self.is_paused
@@ -177,8 +189,8 @@ class ReplayVisualizer:
                     self.speed = max(self.speed - 0.5, 0.1)
                     print(f"Speed: {self.speed:.1f}x")
                 elif event.key == pygame.K_r:
-                    self.current_step = 0
-                    print("Reset to step 0")
+                    self.current_step = -1
+                    print("Reset to initial state")
                 elif event.key == pygame.K_q:
                     self.is_running = False
 
@@ -214,12 +226,44 @@ class ReplayVisualizer:
             self.screen.blit(label, (cx * self.cell_size + 8, cy * self.cell_size + 8))
 
         # Draw current step
-        current_step_data = self.replay_data['steps'][self.current_step]
+        # For step -1 (initial state), show initial positions (four corners)
+        # For step N (N >= 0), show positions from step N and actions from step N+1
+        
+        if self.current_step == -1:
+            # Initial state: create synthetic initial data with robots at corners
+            grid_size = config['grid_size']
+            initial_positions = [
+                [0, 0], [grid_size - 1, 0], [0, grid_size - 1], [grid_size - 1, grid_size - 1]
+            ]
+            current_step_data = {
+                'robots': {
+                    f'robot_{i}': {
+                        'position': initial_positions[i],
+                        'energy': config['robot_initial_energies'][f'robot_{i}'],
+                        'is_dead': False
+                    }
+                    for i in range(4)
+                }
+            }
+            # Show step 0 actions (what will happen next)
+            action_step_data = self.replay_data['steps'][0]
+            show_actions = True
+        else:
+            # Normal case: show current step data
+            current_step_data = self.replay_data['steps'][self.current_step]
+            if self.current_step < len(self.replay_data['steps']) - 1:
+                # Show next step's actions
+                action_step_data = self.replay_data['steps'][self.current_step + 1]
+                show_actions = True
+            else:
+                # Last step: no more actions to show
+                show_actions = False
+                action_step_data = None
 
         # Draw robots
         for agent_id, robot_state in current_step_data['robots'].items():
             if not robot_state['is_dead']:
-                ry, rx = robot_state['position']
+                rx, ry = robot_state['position']  # position is [x, y] = [col, row]
                 color = self.robot_colors[agent_id]
 
                 # Draw robot circle
@@ -232,25 +276,46 @@ class ReplayVisualizer:
                 label = self.font_small.render(robot_num, True, (255, 255, 255))
                 label_rect = label.get_rect(center=(center_x, center_y))
                 self.screen.blit(label, label_rect)
+                
+                # Draw action arrow/indicator (show next action)
+                if show_actions and agent_id in action_step_data['actions']:
+                    action = action_step_data['actions'][agent_id]
+                    self._draw_action_arrow(center_x, center_y, action, color)
 
         # Draw info panel on the right
-        self._draw_info_panel(current_step_data, config)
+        self._draw_info_panel(current_step_data, action_step_data if show_actions else None, config)
 
         # Draw events
         self._draw_events(current_step_data)
 
+        # Draw buttons
+        self._draw_buttons()
+
         # Update display
         pygame.display.flip()
+        
+        # Capture frame if recording (only when step changes)
+        if self.is_recording and self.current_step != self.last_recorded_step:
+            # Get the pygame surface as a numpy array
+            import numpy as np
+            frame = pygame.surfarray.array3d(self.screen)
+            # Transpose to get correct orientation (pygame uses (width, height, 3), we need (height, width, 3))
+            frame = np.transpose(frame, (1, 0, 2))
+            self.recorded_frames.append(frame)
+            self.last_recorded_step = self.current_step
 
-    def _draw_info_panel(self, step_data: Dict, config: Dict):
+    def _draw_info_panel(self, step_data: Dict, action_step_data: Dict, config: Dict):
         """Draw information panel with robot states and Q-values"""
         panel_x = config['grid_size'] * self.cell_size + 10
         y_offset = 10
         line_height = 20
         small_line_height = 16
 
-        # Title
-        title = self.font_large.render(f"Step {self.current_step}", True, self.COLORS['text'])
+        # Title (show "Initial State" for step -1)
+        if self.current_step == -1:
+            title = self.font_large.render(f"Initial State", True, self.COLORS['text'])
+        else:
+            title = self.font_large.render(f"Step {self.current_step}", True, self.COLORS['text'])
         self.screen.blit(title, (panel_x, y_offset))
         y_offset += line_height + 5
 
@@ -267,28 +332,37 @@ class ReplayVisualizer:
         y_offset += line_height + 10
 
         # Robot states and Q-values
-        q_values = step_data.get('q_values', {})
+        # Show Q-values and actions from action_step_data if available
+        if action_step_data:
+            q_values = action_step_data.get('q_values', {})
+        else:
+            q_values = {}
 
         for agent_id in ['robot_0', 'robot_1', 'robot_2', 'robot_3']:
             if agent_id in step_data['robots']:
                 robot_state = step_data['robots'][agent_id]
-                pos_y, pos_x = robot_state['position']
+                pos_x, pos_y = robot_state['position']  # position is [x, y] = [col, row]
                 energy = robot_state['energy']
-                alive = "✓" if not robot_state['is_dead'] else "✗"
-                action_name = step_data['actions'][agent_id]
-
+                alive = "ALIVE" if not robot_state['is_dead'] else "DEAD"
+                
+                # Get action from action_step_data if available
+                if action_step_data and agent_id in action_step_data['actions']:
+                    action_name = action_step_data['actions'][agent_id]
+                else:
+                    action_name = None
+                
                 color = self.robot_colors[agent_id]
 
                 # Robot label with color
                 robot_label = self.font_small.render(
-                    f"{agent_id}: Pos({pos_y},{pos_x}) E:{energy:3d} {alive}",
+                    f"{agent_id}: Pos({pos_x},{pos_y}) E:{energy:3d} {alive}",
                     True, color
                 )
                 self.screen.blit(robot_label, (panel_x, y_offset))
                 y_offset += small_line_height
 
-                # Q-values for this robot (if available)
-                if agent_id in q_values:
+                # Q-values for this robot (if available and action exists)
+                if action_name and agent_id in q_values:
                     agent_q_vals = q_values[agent_id]
                     q_text = "  Q: "
                     for action, q_val in agent_q_vals.items():
@@ -320,16 +394,16 @@ class ReplayVisualizer:
             if event_type == 'collision':
                 attacker = event['attacker']
                 victim = event['victim']
-                text = f"💥 {attacker} → {victim}"
+                text = f"[HIT] {attacker} -> {victim}"
                 color = self.COLORS['event_collision']
             elif event_type == 'death':
                 robot = event['robot']
-                text = f"💀 {robot} DEAD"
+                text = f"[DEAD] {robot}"
                 color = self.COLORS['event_death']
             elif event_type == 'charge':
                 robot = event['robot']
                 amount = event.get('amount', 0)
-                text = f"⚡ {robot} +{amount}"
+                text = f"[CHARGE] {robot} +{amount}"
                 color = self.COLORS['event_charge']
             else:
                 continue
@@ -337,6 +411,208 @@ class ReplayVisualizer:
             label = self.font_small.render(text, True, color)
             self.screen.blit(label, (x_pos, y_pos))
             x_pos += label.get_width() + 30
+
+    def _draw_action_arrow(self, center_x, center_y, action, color):
+        """Draw an arrow showing the action direction"""
+        arrow_length = self.cell_size // 3
+        arrow_width = 4
+        arrow_color = (0, 0, 0)  # Black for visibility
+        
+        # Calculate arrow end point based on action
+        if action == 'UP':
+            end_x, end_y = center_x, center_y - arrow_length
+        elif action == 'DOWN':
+            end_x, end_y = center_x, center_y + arrow_length
+        elif action == 'LEFT':
+            end_x, end_y = center_x - arrow_length, center_y
+        elif action == 'RIGHT':
+            end_x, end_y = center_x + arrow_length, center_y
+        elif action == 'STAY':
+            # Draw a circle for STAY
+            pygame.draw.circle(self.screen, arrow_color, (center_x, center_y), 5, 2)
+            return
+        else:
+            return
+        
+        # Draw arrow line
+        pygame.draw.line(self.screen, arrow_color, (center_x, center_y), (end_x, end_y), arrow_width)
+        
+        # Draw arrowhead (triangle)
+        arrow_head_size = 10
+        if action == 'UP':
+            points = [
+                (end_x, end_y),
+                (end_x - arrow_head_size//2, end_y + arrow_head_size),
+                (end_x + arrow_head_size//2, end_y + arrow_head_size)
+            ]
+        elif action == 'DOWN':
+            points = [
+                (end_x, end_y),
+                (end_x - arrow_head_size//2, end_y - arrow_head_size),
+                (end_x + arrow_head_size//2, end_y - arrow_head_size)
+            ]
+        elif action == 'LEFT':
+            points = [
+                (end_x, end_y),
+                (end_x + arrow_head_size, end_y - arrow_head_size//2),
+                (end_x + arrow_head_size, end_y + arrow_head_size//2)
+            ]
+        elif action == 'RIGHT':
+            points = [
+                (end_x, end_y),
+                (end_x - arrow_head_size, end_y - arrow_head_size//2),
+                (end_x - arrow_head_size, end_y + arrow_head_size//2)
+            ]
+        
+        pygame.draw.polygon(self.screen, arrow_color, points)
+
+    def _draw_buttons(self):
+        """Draw control buttons at the bottom"""
+        button_y_row1 = self.replay_data['config']['grid_size'] * self.cell_size + 60
+        button_y_row2 = button_y_row1 + 50  # Second row
+        button_x_start = 10
+        button_spacing = 120
+
+        # Change button label based on state
+        if self.current_step == -1 or self.is_paused:
+            play_label = 'START' if self.current_step == -1 else 'PLAY'
+        else:
+            play_label = 'PAUSE'
+        
+        # Speed display (steps per second)
+        steps_per_sec = self.speed * 60
+        speed_label = f'SPD:{steps_per_sec:.2f}'
+        
+        # Recording label
+        rec_label = 'STOP REC' if self.is_recording else 'RECORD'
+
+        # Row 1: Playback controls
+        row1_buttons = [
+            (play_label, self._toggle_pause),
+            ('RESTART', self._restart),
+        ]
+        
+        # Row 2: Speed and recording
+        row2_buttons = [
+            ('SLOWER', self._slower),
+            (speed_label, None),  # Display only, no callback
+            ('FASTER', self._faster),
+            (rec_label, self._toggle_recording),
+        ]
+
+        self.buttons = []
+        
+        # Draw row 1
+        for i, (label, callback) in enumerate(row1_buttons):
+            x = button_x_start + i * button_spacing
+            rect = pygame.Rect(x, button_y_row1, self.button_width, self.button_height)
+            self.buttons.append((rect, callback, label))
+            self._draw_single_button(rect, label, callback)
+        
+        # Draw row 2
+        for i, (label, callback) in enumerate(row2_buttons):
+            x = button_x_start + i * button_spacing
+            rect = pygame.Rect(x, button_y_row2, self.button_width, self.button_height)
+            self.buttons.append((rect, callback, label))
+            self._draw_single_button(rect, label, callback)
+    
+    def _draw_single_button(self, rect, label, callback):
+        """Draw a single button"""
+        # Draw button
+        if self.is_recording and label == 'STOP REC':
+            color = (200, 50, 50)  # Red when recording
+        elif callback is None:
+            color = (70, 70, 70)  # Darker for display-only
+        else:
+            color = (100, 100, 100)
+        pygame.draw.rect(self.screen, color, rect)
+        pygame.draw.rect(self.screen, (200, 200, 200), rect, 2)
+
+        # Draw text
+        text = self.font_small.render(label, True, (255, 255, 255))
+        text_rect = text.get_rect(center=rect.center)
+        self.screen.blit(text, text_rect)
+
+    def _toggle_pause(self):
+        if self.current_step == -1:
+            # Start from initial state
+            self.current_step = 0
+            self.is_paused = False
+            print("Starting playback from step 0")
+        else:
+            self.is_paused = not self.is_paused
+            status = "PAUSED" if self.is_paused else "PLAYING"
+            print(f"Playback: {status}")
+
+    def _restart(self):
+        self.current_step = -1
+        self.is_paused = True
+        print("Reset to initial state")
+    
+    def _slower(self):
+        # Decrease speed (min 0.25 steps/sec = 0.25/60 per frame)
+        steps_per_sec = self.speed * 60
+        steps_per_sec = max(0.25, steps_per_sec - 0.25)
+        self.speed = steps_per_sec / 60.0
+        print(f"Speed: {steps_per_sec:.2f} steps/sec")
+    
+    def _faster(self):
+        # Increase speed (max 4 steps/sec = 4/60 per frame)
+        steps_per_sec = self.speed * 60
+        steps_per_sec = min(4.0, steps_per_sec + 0.25)
+        self.speed = steps_per_sec / 60.0
+        print(f"Speed: {steps_per_sec:.2f} steps/sec")
+    
+    def _toggle_recording(self):
+        if self.is_recording:
+            # Stop recording and save video
+            self._save_video()
+            self.is_recording = False
+            self.recorded_frames = []
+            self.last_recorded_step = -2
+            print("Recording stopped and video saved")
+        else:
+            # Start recording
+            self.is_recording = True
+            self.recorded_frames = []
+            self.last_recorded_step = -2
+            print("Recording started")
+    
+    def _save_video(self):
+        """Save recorded frames as MP4 video"""
+        if not self.recorded_frames:
+            print("No frames to save")
+            return
+        
+        try:
+            import cv2
+            import numpy as np
+            
+            # Generate output filename
+            output_path = self.replay_file.parent / f"{self.replay_file.stem}_replay.mp4"
+            
+            # Get frame size from first frame
+            height, width, _ = self.recorded_frames[0].shape
+            
+            # Create video writer (30 fps, each step shows for 1 second = 30 frames)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(str(output_path), fourcc, 30.0, (width, height))
+            
+            frames_per_step = 30  # Each step displays for 1 second at 30 fps
+            for frame in self.recorded_frames:
+                # Convert RGB to BGR for OpenCV
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                # Write the same frame multiple times
+                for _ in range(frames_per_step):
+                    out.write(frame_bgr)
+            
+            out.release()
+            print(f"Video saved to: {output_path} ({len(self.recorded_frames)} steps, 1 sec per step)")
+            
+        except ImportError:
+            print("Error: opencv-python not installed. Install with: pip install opencv-python")
+        except Exception as e:
+            print(f"Error saving video: {e}")
 
 
 def main():
