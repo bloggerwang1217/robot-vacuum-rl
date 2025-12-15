@@ -180,7 +180,10 @@ class ReplayVisualizer:
                     )
                     self.is_paused = True
                 elif event.key == pygame.K_LEFT:
-                    self.current_step = max(self.current_step - 1, 0)
+                    if self.current_step == 0:
+                        self.current_step = -1
+                    else:
+                        self.current_step = max(self.current_step - 1, 0)
                     self.is_paused = True
                 elif event.key == pygame.K_UP:
                     self.speed = min(self.speed + 0.5, 5.0)

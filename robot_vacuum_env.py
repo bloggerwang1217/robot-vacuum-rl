@@ -340,6 +340,38 @@ class RobotVacuumEnv:
                             })
                         break
         
+        # 2d. 檢查移動機器人的目標位置是否是被阻擋機器人的當前位置
+        # 被阻擋的機器人（在 collision_events 中）不會移動，所以他們的當前位置仍被佔據
+        # 需要迭代處理，因為新被阻擋的機器人也會阻擋其他機器人
+        changed = True
+        while changed:
+            changed = False
+            blocked_positions = {}  # {pos: robot_id} - 被阻擋機器人的當前位置
+            for robot_id in collision_events:
+                if robot_id in moving_robots:
+                    # 這個機器人被阻擋了，他的當前位置仍被佔據
+                    robot = self.robots[robot_id]
+                    blocked_positions[(robot['y'], robot['x'])] = robot_id
+            
+            # 檢查其他移動機器人是否想進入被阻擋的位置
+            for robot_id, planned_pos in moving_robots.items():
+                if robot_id in collision_events:
+                    continue  # 已經有碰撞事件
+                if planned_pos in blocked_positions:
+                    # 目標位置被一個不能移動的機器人佔據
+                    blocker_id = blocked_positions[planned_pos]
+                    collision_events[robot_id] = "blocked_by_stuck_robot"
+                    self.robots[robot_id]['collided_with_agent_id'] = blocker_id
+                    self.robots[robot_id]['active_collision_count'] += 1
+                    self.robots[robot_id]['active_collisions_with'][blocker_id] += 1
+                    # 記錄碰撞歷史
+                    self.robots[robot_id]['collision_events'].append({
+                        'step': self.current_step,
+                        'opponent_id': blocker_id,
+                        'collision_type': 'blocked_by_stuck_robot'
+                    })
+                    changed = True  # 有新的阻擋，需要再次檢查
+        
         # 3. 結算所有機器的狀態
         # 3a. 處理移動的機器人
         for robot_id, planned_pos in moving_robots.items():
@@ -366,6 +398,11 @@ class RobotVacuumEnv:
                     robot['active_collision_count'] += 1
                     if robot['collided_with_agent_id'] is not None:
                         robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
+
+                elif reason == "blocked_by_stuck_robot":
+                    # 目標位置被一個不能移動的機器人佔據：停留原位，不受傷
+                    # (碰撞計數已在 2d 中處理)
+                    pass
 
                 elif reason == "boundary":
                     # 撞牆：停留原位，受傷
