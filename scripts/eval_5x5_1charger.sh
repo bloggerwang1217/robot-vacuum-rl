@@ -9,10 +9,10 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
 
 # 模型目錄 (使用已訓練好的模型)
-MODELS_DIR="${SCRIPT_DIR}/models/massacre_5x5_center_20251210_100014"
+MODELS_DIR="${SCRIPT_DIR}/models/massacre_5x5_center_20251215_155558"
 
-# 選擇要評估的 episode checkpoint (推薦 2000 = 完全收斂)
-EPISODE="2000"
+# 選擇要評估的 episode checkpoint (推薦 5000 = 完全收斂)
+EPISODE="5000"
 
 # 最大步數 (敵人初始能量 100，每步 -1，足夠讓自然死亡完成)
 MAX_STEPS=5000

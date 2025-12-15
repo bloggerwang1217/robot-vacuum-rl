@@ -81,7 +81,7 @@ for ((i=0; i<${#configs[@]}; i++)); do
   # 執行訓練
   python3 "$SCRIPT_DIR/train_dqn.py" \
     $config_params \
-    --num-episodes 2000 \
+    --num-episodes 5000 \
     --max-episode-steps 1000 \
     --save-dir "$run_dir" \
     --save-frequency 500 \
