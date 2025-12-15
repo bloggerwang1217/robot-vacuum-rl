@@ -41,6 +41,7 @@ class RobotVacuumGymEnv:
                 'e_move': kwargs.get('e_move', 1),
                 'e_charge': kwargs.get('e_charge', 5),
                 'e_collision': kwargs.get('e_collision', 3),
+                'e_boundary': kwargs.get('e_boundary', 50),
                 'e_collision_active_one_sided': kwargs.get('e_collision_active_one_sided', None),
                 'e_collision_active_two_sided': kwargs.get('e_collision_active_two_sided', None),
                 'e_collision_passive': kwargs.get('e_collision_passive', None),

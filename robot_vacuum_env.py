@@ -70,10 +70,11 @@ class RobotVacuumEnv:
         self.robot_energies = config.get('robot_energies', [self.initial_energy] * 4)
         self.e_move = config['e_move']
         self.e_charge = config['e_charge']
-        # 碰撞傷害參數（統一使用 e_collision）
-        # 互撞時（swap 或 contested）：雙方都受傷
-        # 被單方面推人時：被推方受傷
+        # 碰撞傷害參數
+        # e_collision: 機器人之間的碰撞傷害
+        # e_boundary: 撞牆的傷害（通常設置更高以避免撞牆）
         self.e_collision = config.get('e_collision', 3)
+        self.e_boundary = config.get('e_boundary', 50)  # 撞牆懲罰（預設 50）
         self.n_steps = config['n_steps']
         self.epsilon = config.get('epsilon', 0.2)  # 預設探索率 20%
 
@@ -405,8 +406,8 @@ class RobotVacuumEnv:
                     pass
 
                 elif reason == "boundary":
-                    # 撞牆：停留原位，受傷
-                    robot['energy'] -= self.e_collision
+                    # 撞牆：停留原位，受高額懲罰（使用 e_boundary）
+                    robot['energy'] -= self.e_boundary
                     robot['active_collision_count'] += 1
                     # 記錄撞牆事件
                     robot['collision_events'].append({

@@ -79,6 +79,7 @@ class ModelEvaluator:
             e_move=args.e_move,
             e_charge=args.e_charge,
             e_collision=args.e_collision,
+            e_boundary=args.e_boundary,
             n_steps=args.max_steps,  # Use max_steps for single long episode
             render_mode=render_mode,
             charger_positions=charger_positions
@@ -518,6 +519,7 @@ class ModelEvaluator:
                 "parameters": {
                     "e_move": self.args.e_move,
                     "e_collision": self.args.e_collision,
+                    "e_boundary": self.args.e_boundary,
                     "e_charge": self.args.e_charge,
                 }
             },
@@ -682,6 +684,7 @@ def main():
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision (互撞或被推人時的傷害)")
+    parser.add_argument("--e-boundary", type=int, default=50, help="Energy loss when hitting wall/boundary (撞牆懲罰)")
     parser.add_argument("--charger-positions", type=str, default=None,
                        help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')
 
