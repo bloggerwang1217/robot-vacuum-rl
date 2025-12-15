@@ -228,9 +228,9 @@ class RobotVacuumGymEnv:
             energy_delta = robot['energy'] - prev_robot['energy']
             reward += energy_delta * 0.05
 
-            # 2. 充電獎勵 (提升 10 倍: 0.5 → 5.0)
+            # 2. 充電獎勵（固定 30.0，確保充電比撞牆或碰撞更有利）
             if robot['charge_count'] > prev_robot['charge_count']:
-                reward += 10.0
+                reward += 30.0
 
             # 3. 死亡懲罰
             if not robot['is_active'] and prev_robot['is_active']:
