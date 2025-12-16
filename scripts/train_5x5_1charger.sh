@@ -8,6 +8,13 @@ set -e
 # 參數解析：第一個參數為 episodes 數量，預設 5000
 NUM_EPISODES=${1:-5000}
 
+# 根據 episodes 數量動態設定 epsilon decay
+if [ $NUM_EPISODES -ge 5000 ]; then
+  EPSILON_DECAY=0.998  # 5000 episodes: 在 ~2000 ep 降到 0.01
+else
+  EPSILON_DECAY=0.999  # 預設: 在 ~900 ep 降到 0.01
+fi
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
 MODELS_DIR="${SCRIPT_DIR}/models/massacre_5x5_center_$(date +%Y%m%d_%H%M%S)"
 
@@ -24,7 +31,7 @@ echo ""
 # 定義訓練配置
 # 格式: "配置名稱|訓練參數"
 declare -a configs=(
-  "massacre-1v3-5x5-center|--env-n 5 --charger-positions 2,2 --robot-0-energy 1000 --robot-1-energy 100 --robot-2-energy 100 --robot-3-energy 100 --e-collision 20 --e-charge 20 --use-epsilon-decay"
+  "massacre-1v3-5x5-center|--env-n 5 --charger-positions 2,2 --robot-0-energy 1000 --robot-1-energy 100 --robot-2-energy 100 --robot-3-energy 100 --e-collision 20 --e-charge 20 --use-epsilon-decay --epsilon-decay 0.998"
 )
 
 total_configs=${#configs[@]}
@@ -50,7 +57,7 @@ echo "  - e-collision: 20 (推人傷害，降低敵人進行風險)"
 echo "  - e-charge: 20 (充電獎勵，提升敵人去充電座的動機)"
 echo "  - 機制: 先充電後扣生存成本（強化充電座吸引力）"
 echo "  - batch-size: 128"
-echo "  - 使用 epsilon decay"
+echo "  - epsilon decay: 0.998 (較慢的探索衰減，在 ep~2000 時降到 0.01)"
 echo ""
 echo "血量配置 (虐殺模式)："
 echo "  [1v3] Robot 0: 1000 | Robots 1,2,3: 100 (一個強者 vs 三個弱者)"
