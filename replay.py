@@ -579,7 +579,9 @@ class ReplayVisualizer:
             self.is_recording = True
             self.recorded_frames = []
             self.last_recorded_step = -2
-            print("Recording started")
+            # 記錄當前的播放速度
+            self.recording_speed = self.speed * 60  # 轉換回 steps/sec
+            print(f"Recording started at speed: {self.recording_speed:.2f} steps/sec")
     
     def _save_video(self):
         """Save recorded frames as MP4 video"""
@@ -597,20 +599,29 @@ class ReplayVisualizer:
             # Get frame size from first frame
             height, width, _ = self.recorded_frames[0].shape
             
-            # Create video writer (30 fps, each step shows for 1 second = 30 frames)
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(str(output_path), fourcc, 30.0, (width, height))
+            # 根據錄製時的播放速度計算每 step 的幀數
+            # 播放速度 = steps/sec，所以每 step = 1/speed 秒
+            # 影片 30 fps，所以每 step = 30 * (1/speed) = 30/speed 幀
+            steps_per_sec = self.recording_speed
+            frames_per_step = max(1, round(30.0 / steps_per_sec))
+            video_fps = 30.0
             
-            frames_per_step = 30  # Each step displays for 1 second at 30 fps
+            # Create video writer
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(str(output_path), fourcc, video_fps, (width, height))
+            
             for frame in self.recorded_frames:
                 # Convert RGB to BGR for OpenCV
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                # Write the same frame multiple times
+                # Write the frame multiple times based on recording speed
                 for _ in range(frames_per_step):
                     out.write(frame_bgr)
             
             out.release()
-            print(f"Video saved to: {output_path} ({len(self.recorded_frames)} steps, 1 sec per step)")
+            actual_steps_per_sec = video_fps / frames_per_step
+            print(f"Video saved to: {output_path}")
+            print(f"  Frames: {len(self.recorded_frames)} steps")
+            print(f"  Speed: {actual_steps_per_sec:.2f} steps/sec (recorded at {self.recording_speed:.2f}x)")
             
         except ImportError:
             print("Error: opencv-python not installed. Install with: pip install opencv-python")
