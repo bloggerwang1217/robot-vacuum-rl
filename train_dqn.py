@@ -144,9 +144,12 @@ class IndependentDQNAgent:
         # Compute Q-values
         q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
 
-        # Compute target Q-values (Standard DQN)
+        # Compute target Q-values (Double DQN to lower overestimation)
         with torch.no_grad():
-            next_q_values = self.target_net(next_states).max(1)[0]
+            # Select actiom: use q_net to obtain best action
+            next_actions = self.q_net(next_states).argmax(1, keepdim=True)
+            # Evaluate value: use target_net to evaluate the Q-value
+            next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
             target_q_values = rewards + self.gamma * next_q_values * (1 - dones)
 
         # Compute loss (MSE)
