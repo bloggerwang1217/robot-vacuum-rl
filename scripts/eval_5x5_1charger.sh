@@ -12,7 +12,7 @@ set -e
 if [ -z "$1" ]; then
   echo "錯誤：請提供模型目錄名稱"
   echo "用法: $0 <模型目錄名稱> [episode數量]"
-  echo "範例: $0 massacre_5x5_center_20251216_003734 2000"
+  echo "範例: $0 massacre_5x5_center_20251216_111427 2000"
   exit 1
 fi
 
