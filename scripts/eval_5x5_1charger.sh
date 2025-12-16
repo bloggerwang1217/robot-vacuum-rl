@@ -6,16 +6,34 @@
 
 set -e
 
+# 參數解析：
+# $1: 模型目錄名稱（必填，例如：massacre_5x5_center_20251216_003734）
+# $2: episode checkpoint（選填，預設 5000）
+if [ -z "$1" ]; then
+  echo "錯誤：請提供模型目錄名稱"
+  echo "用法: $0 <模型目錄名稱> [episode數量]"
+  echo "範例: $0 massacre_5x5_center_20251216_003734 2000"
+  exit 1
+fi
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
 
 # 模型目錄 (使用已訓練好的模型)
-MODELS_DIR="${SCRIPT_DIR}/models/massacre_5x5_center_20251216_003734"
+MODELS_DIR="${SCRIPT_DIR}/models/$1"
 
-# 選擇要評估的 episode checkpoint (推薦 5000 = 完全收斂)
-EPISODE="5000"
+# 選擇要評估的 episode checkpoint (預設 5000)
+EPISODE="${2:-5000}"
 
 # 最大步數 (敵人初始能量 100，每步 -1，足夠讓自然死亡完成)
 MAX_STEPS=5000
+
+# 檢查模型目錄是否存在
+if [ ! -d "$MODELS_DIR" ]; then
+  echo "錯誤：模型目錄不存在: $MODELS_DIR"
+  echo "可用的模型目錄："
+  ls -d ${SCRIPT_DIR}/models/massacre_5x5_center_* 2>/dev/null || echo "  (無)"
+  exit 1
+fi
 
 echo "=========================================="
 echo "機器人吸塵器強化學習 - 虐殺模式評估 (長期版)"

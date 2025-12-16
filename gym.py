@@ -63,10 +63,10 @@ class RobotVacuumGymEnv:
         self.action_space = spaces.Discrete(5)
 
         # 定義觀測空間 (每個機器人)
-        # [自身位置2 + 自身能量1 + 其他機器人3*3 + 充電座2*N]
-        # = 3 + 9 + 2*num_chargers = 12 + 2*num_chargers
+        # [自身位置2 + 自身能量1 + 其他機器人3*3 + 充電座2*N + 可移動方向4]
+        # = 3 + 9 + 2*num_chargers + 4 = 16 + 2*num_chargers
         num_chargers = len(self.env.charger_positions)
-        obs_dim = 12 + 2 * num_chargers
+        obs_dim = 16 + 2 * num_chargers
         self.observation_space = spaces.Box(
             low=-1.0,
             high=1.0,
@@ -156,11 +156,12 @@ class RobotVacuumGymEnv:
         """
         為每個機器人生成觀測向量
 
-        觀測向量結構 (20 維):
+        觀測向量結構 (16 + 2*N 維，N=充電座數量):
         - [0:2]: 自身位置 (x, y) 正規化到 [0, 1]
         - [2:3]: 自身能量正規化到 [0, 1]
         - [3:12]: 其他3個機器人的相對狀態 (dx, dy, energy) * 3
-        - [12:20]: 4個充電座的相對位置 (dx, dy) * 4
+        - [12:12+2N]: N個充電座的相對位置 (dx, dy) * N
+        - [12+2N:16+2N]: 可移動方向 (can_up, can_down, can_left, can_right)
         """
         observations = {}
         robots = state['robots']
@@ -199,6 +200,12 @@ class RobotVacuumGymEnv:
                 dx = (charger_x - robot['x']) / (self.n - 1) if self.n > 1 else 0.0
                 dy = (charger_y - robot['y']) / (self.n - 1) if self.n > 1 else 0.0
                 obs.extend([dx, dy])
+
+            # 5. 可移動方向 (邊界資訊)
+            obs.append(1.0 if robot['y'] > 0 else 0.0)              # can_move_up
+            obs.append(1.0 if robot['y'] < self.n - 1 else 0.0)     # can_move_down
+            obs.append(1.0 if robot['x'] > 0 else 0.0)              # can_move_left
+            obs.append(1.0 if robot['x'] < self.n - 1 else 0.0)     # can_move_right
 
             observations[agent_id] = np.array(obs, dtype=np.float32)
 

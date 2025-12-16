@@ -5,6 +5,9 @@
 
 set -e
 
+# 參數解析：第一個參數為 episodes 數量，預設 5000
+NUM_EPISODES=${1:-5000}
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
 MODELS_DIR="${SCRIPT_DIR}/models/massacre_5x5_center_$(date +%Y%m%d_%H%M%S)"
 
@@ -14,6 +17,7 @@ echo "=========================================="
 echo "開始時間: $(date)"
 echo "模型儲存目錄: $MODELS_DIR"
 echo "地圖配置: 5x5，充電器位置: (2,2)（中心）"
+echo "訓練 Episodes: $NUM_EPISODES"
 echo "=========================================="
 echo ""
 
@@ -81,13 +85,13 @@ for ((i=0; i<${#configs[@]}; i++)); do
   # 執行訓練
   python3 "$SCRIPT_DIR/train_dqn.py" \
     $config_params \
-    --num-episodes 5000 \
+    --num-episodes $NUM_EPISODES \
     --max-episode-steps 1000 \
     --save-dir "$run_dir" \
     --save-frequency 500 \
     --wandb-entity lazyhao-national-taiwan-university \
     --wandb-project robot-vacuum-rl \
-    --wandb-run-name "$config_name" \
+    --wandb-run-name "$config_name-ep$NUM_EPISODES" \
     --wandb-mode online \
     2>&1 | tee "$run_dir/training.log"
 
