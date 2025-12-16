@@ -9,7 +9,7 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
 
 # 模型目錄 (使用已訓練好的模型)
-MODELS_DIR="${SCRIPT_DIR}/models/massacre_5x5_center_20251215_155558"
+MODELS_DIR="${SCRIPT_DIR}/models/massacre_5x5_center_20251216_003734"
 
 # 選擇要評估的 episode checkpoint (推薦 5000 = 完全收斂)
 EPISODE="5000"

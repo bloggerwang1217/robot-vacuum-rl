@@ -1,0 +1,1123 @@
+/usr/local/lib/python3.10/dist-packages/torch/utils/_pytree.py:185: FutureWarning: optree is installed but the version is too old to support PyTorch Dynamo in C++ pytree. C++ pytree support is disabled. Please consider upgrading optree using `python3 -m pip install --upgrade 'optree>=0.13.0'`.
+  warnings.warn(
+wandb: Currently logged in as: bloggerwang1217 (lazyhao-national-taiwan-university) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run 6uadndld
+wandb: Tracking run with wandb version 0.23.0
+wandb: Run data is saved locally in /home/bloggerwang/robot-vaccum-rl/scripts/wandb/run-20251216_102354-6uadndld
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run eval-massacre-1v3-5x5-center-ep5000-long
+wandb: ⭐️ View project at https://wandb.ai/lazyhao-national-taiwan-university/robot-vacuum-eval
+wandb: 🚀 View run at https://wandb.ai/lazyhao-national-taiwan-university/robot-vacuum-eval/runs/6uadndld
+Random seed set to: 42
+Using device: cuda
+Using custom charger positions: [(2, 2)]
+Loading models from: /home/bloggerwang/robot-vaccum-rl/models/massacre_5x5_center_20251216_003734/massacre-1v3-5x5-center/episode_5000
+  Loaded robot_0 from /home/bloggerwang/robot-vaccum-rl/models/massacre_5x5_center_20251216_003734/massacre-1v3-5x5-center/episode_5000/robot_0.pt
+  Loaded robot_1 from /home/bloggerwang/robot-vaccum-rl/models/massacre_5x5_center_20251216_003734/massacre-1v3-5x5-center/episode_5000/robot_1.pt
+  Loaded robot_2 from /home/bloggerwang/robot-vaccum-rl/models/massacre_5x5_center_20251216_003734/massacre-1v3-5x5-center/episode_5000/robot_2.pt
+  Loaded robot_3 from /home/bloggerwang/robot-vaccum-rl/models/massacre_5x5_center_20251216_003734/massacre-1v3-5x5-center/episode_5000/robot_3.pt
+All models loaded successfully!
+
+============================================================
+Starting Long-Term Simulation
+Max Steps: 5000
+Robot Energies: [1000, 100, 100, 100]
+Eval Epsilon: 0.0
+============================================================
+
+  robot_0 Q-values: [UP:2147.723, DOWN:2336.224, LEFT:2151.083, RIGHT:2364.846, STAY:2307.224] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:1130.410, DOWN:2328.674, LEFT:2311.563, RIGHT:731.992, STAY:2069.663] Selected: DOWN 👈
+  robot_2 Q-values: [UP:56979.715, DOWN:42530.051, LEFT:18463.766, RIGHT:58954.426, STAY:38684.859] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:1997.095, DOWN:729.686, LEFT:2089.136, RIGHT:631.740, STAY:2142.885] Selected: STAY 👈
+[Step     1] Survival: 4/4 | Mean Reward: 0.05 | Collisions: 0 (Active: 0, Passive: 0) | Immediate Kills: 0 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,0), Energy=999, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_1: Pos=(4,1), Energy=99, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_2: Pos=(1,4), Energy=99, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(4,4), Energy=99, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2152.710, DOWN:2352.769, LEFT:2185.565, RIGHT:2359.734, STAY:2288.098] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:2195.519, DOWN:2381.848, LEFT:2379.281, RIGHT:800.925, STAY:2340.324] Selected: DOWN 👈
+  robot_2 Q-values: [UP:60070.527, DOWN:45678.648, LEFT:19992.086, RIGHT:61287.434, STAY:40119.219] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2086.965, DOWN:637.155, LEFT:2103.621, RIGHT:952.632, STAY:2183.393] Selected: STAY 👈
+[Step     2] Survival: 4/4 | Mean Reward: 0.10 | Collisions: 0 (Active: 0, Passive: 0) | Immediate Kills: 0 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,0), Energy=998, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_1: Pos=(4,2), Energy=98, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_2: Pos=(2,4), Energy=98, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(4,4), Energy=98, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2177.963, DOWN:2354.509, LEFT:2212.735, RIGHT:2319.373, STAY:2290.859] Selected: DOWN 👈
+  robot_1 Q-values: [UP:2832.055, DOWN:2637.955, LEFT:3266.648, RIGHT:1231.299, STAY:2974.441] Selected: LEFT 👈
+  robot_2 Q-values: [UP:67420.969, DOWN:53794.582, LEFT:25052.820, RIGHT:68263.242, STAY:45618.734] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2075.847, DOWN:716.793, LEFT:2081.037, RIGHT:1234.823, STAY:2174.701] Selected: STAY 👈
+[Step     3] Survival: 4/4 | Mean Reward: 0.15 | Collisions: 0 (Active: 0, Passive: 0) | Immediate Kills: 0 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,1), Energy=997, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_1: Pos=(3,2), Energy=97, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_2: Pos=(3,4), Energy=97, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(4,4), Energy=97, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2250.019, DOWN:2341.204, LEFT:2237.781, RIGHT:2291.782, STAY:2273.424] Selected: DOWN 👈
+  robot_1 Q-values: [UP:3140.027, DOWN:2895.336, LEFT:3625.995, RIGHT:2740.502, STAY:3200.448] Selected: LEFT 👈
+  robot_2 Q-values: [UP:63950.434, DOWN:47431.441, LEFT:18267.496, RIGHT:61396.082, STAY:38527.055] Selected: UP 👈
+  robot_3 Q-values: [UP:2111.462, DOWN:605.436, LEFT:2137.977, RIGHT:1143.140, STAY:2216.532] Selected: STAY 👈
+[Step     4] Survival: 4/4 | Mean Reward: -0.30 | Collisions: 2 (Active: 2, Passive: 0) | Immediate Kills: 0 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,1), Energy=976, Collisions=1 (Active: 1, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→1, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→1, 2→0, 3→0]
+    robot_1: Pos=(3,2), Energy=76, Collisions=1 (Active: 1, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→1, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→1, 1→0, 2→0, 3→0]
+    robot_2: Pos=(3,3), Energy=96, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(4,4), Energy=96, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2209.768, DOWN:2286.529, LEFT:2186.022, RIGHT:2260.233, STAY:2240.203] Selected: DOWN 👈
+  robot_1 Q-values: [UP:1973.939, DOWN:2001.807, LEFT:2473.191, RIGHT:1953.290, STAY:2110.956] Selected: LEFT 👈
+  robot_2 Q-values: [UP:82939.156, DOWN:68657.852, LEFT:31533.625, RIGHT:83599.125, STAY:55952.711] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2256.275, DOWN:643.294, LEFT:2317.556, RIGHT:1187.691, STAY:2335.154] Selected: STAY 👈
+[Step     5] Survival: 4/4 | Mean Reward: -0.75 | Collisions: 4 (Active: 4, Passive: 0) | Immediate Kills: 0 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,1), Energy=955, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→2, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→2, 2→0, 3→0]
+    robot_1: Pos=(3,2), Energy=55, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→2, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→2, 1→0, 2→0, 3→0]
+    robot_2: Pos=(4,3), Energy=95, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(4,4), Energy=95, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2206.284, DOWN:2272.341, LEFT:2179.469, RIGHT:2265.443, STAY:2235.840] Selected: DOWN 👈
+  robot_1 Q-values: [UP:1165.345, DOWN:1158.913, LEFT:1427.932, RIGHT:965.989, STAY:1216.750] Selected: LEFT 👈
+  robot_2 Q-values: [UP:133375.781, DOWN:120559.469, LEFT:66607.977, RIGHT:138954.750, STAY:99627.875] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2300.838, DOWN:834.447, LEFT:2404.285, RIGHT:1236.836, STAY:2414.905] Selected: STAY 👈
+[Step     6] Survival: 4/4 | Mean Reward: -1.83 | Collisions: 7 (Active: 7, Passive: 0) | Immediate Kills: 0 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,1), Energy=934, Collisions=3 (Active: 3, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→3, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→3, 2→0, 3→0]
+    robot_1: Pos=(3,2), Energy=34, Collisions=3 (Active: 3, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→3, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→3, 1→0, 2→0, 3→0]
+    robot_2: Pos=(4,3), Energy=44, Collisions=1 (Active: 1, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(4,4), Energy=94, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2357.727, DOWN:2423.809, LEFT:2340.611, RIGHT:2358.981, STAY:2401.582] Selected: DOWN 👈
+  robot_1 Q-values: [UP:838.132, DOWN:660.627, LEFT:1140.183, RIGHT:703.382, STAY:831.682] Selected: LEFT 👈
+  robot_2 Q-values: [UP:29113.590, DOWN:19646.902, LEFT:2420.023, RIGHT:24578.488, STAY:12154.172] Selected: UP 👈
+  robot_3 Q-values: [UP:2761.387, DOWN:1204.169, LEFT:2808.366, RIGHT:1977.225, STAY:2830.671] Selected: STAY 👈
+[Step     7] Survival: 4/4 | Mean Reward: -2.28 | Collisions: 9 (Active: 9, Passive: 0) | Immediate Kills: 0 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,1), Energy=913, Collisions=4 (Active: 4, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→4, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→4, 2→0, 3→0]
+    robot_1: Pos=(3,2), Energy=13, Collisions=4 (Active: 4, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→4, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→4, 1→0, 2→0, 3→0]
+    robot_2: Pos=(4,2), Energy=43, Collisions=1 (Active: 1, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(4,4), Energy=93, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2353.430, DOWN:2431.652, LEFT:2332.986, RIGHT:2351.703, STAY:2409.191] Selected: DOWN 👈
+  robot_1 Q-values: [UP:125.483, DOWN:110.866, LEFT:214.507, RIGHT:65.125, STAY:68.100] Selected: LEFT 👈
+  robot_2 Q-values: [UP:35170.652, DOWN:25886.020, LEFT:3987.656, RIGHT:30858.863, STAY:15432.641] Selected: UP 👈
+  robot_3 Q-values: [UP:2682.159, DOWN:1282.024, LEFT:2802.356, RIGHT:2092.279, STAY:2778.114] Selected: LEFT 👈
+[Step     8] Survival: 3/4 | Mean Reward: -27.65 | Collisions: 11 (Active: 11, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,1), Energy=892, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2: Pos=(4,1), Energy=42, Collisions=1 (Active: 1, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(3,4), Energy=92, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2325.063, DOWN:2427.142, LEFT:2313.114, RIGHT:2346.564, STAY:2403.826] Selected: DOWN 👈
+  robot_1 Q-values: [UP:27.424, DOWN:-34.410, LEFT:37.542, RIGHT:-41.010, STAY:-18.597] Selected: LEFT 👈
+  robot_2 Q-values: [UP:56869.090, DOWN:53308.023, LEFT:20719.070, RIGHT:59503.332, STAY:37573.680] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2556.658, DOWN:1071.906, LEFT:2780.721, RIGHT:2776.155, STAY:2729.532] Selected: LEFT 👈
+[Step     9] Survival: 2/4 | Mean Reward: -45.40 | Collisions: 12 (Active: 12, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,2), Energy=911, Collisions=5 (Active: 5, Passive: 0), Charges=1, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,4), Energy=91, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2455.745, DOWN:2428.295, LEFT:2416.730, RIGHT:2410.384, STAY:2479.144] Selected: STAY 👈
+  robot_1 Q-values: [UP:-48.782, DOWN:-50.131, LEFT:-11.323, RIGHT:-85.680, STAY:-44.722] Selected: LEFT 👈
+  robot_2 Q-values: [UP:2605.903, DOWN:2857.426, LEFT:-7555.539, RIGHT:1072.113, STAY:-4368.468] Selected: DOWN 👈
+  robot_3 Q-values: [UP:3072.492, DOWN:1284.927, LEFT:2898.762, RIGHT:2918.435, STAY:2917.538] Selected: UP 👈
+[Step    10] Survival: 2/4 | Mean Reward: -37.62 | Collisions: 12 (Active: 12, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(2,2), Energy=930, Collisions=5 (Active: 5, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,3), Energy=90, Collisions=0 (Active: 0, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2369.332, DOWN:2296.640, LEFT:2370.098, RIGHT:2368.073, STAY:2328.390] Selected: LEFT 👈
+  robot_1 Q-values: [UP:-37.100, DOWN:-39.820, LEFT:-3.582, RIGHT:-65.047, STAY:-36.699] Selected: LEFT 👈
+  robot_2 Q-values: [UP:-1143.551, DOWN:-270.793, LEFT:-8191.375, RIGHT:-2388.887, STAY:-6211.781] Selected: DOWN 👈
+  robot_3 Q-values: [UP:3014.839, DOWN:3007.415, LEFT:2895.909, RIGHT:2911.352, STAY:2848.253] Selected: UP 👈
+[Step    11] Survival: 2/4 | Mean Reward: -29.96 | Collisions: 12 (Active: 12, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=929, Collisions=5 (Active: 5, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=100, Collisions=0 (Active: 0, Passive: 0), Charges=1, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2386.403, DOWN:2285.233, LEFT:2296.032, RIGHT:2435.822, STAY:2353.615] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-34.419, DOWN:-20.891, LEFT:-1.354, RIGHT:-51.068, STAY:-22.333] Selected: LEFT 👈
+  robot_2 Q-values: [UP:-3243.988, DOWN:-1465.699, LEFT:-7791.984, RIGHT:-3978.387, STAY:-6701.765] Selected: DOWN 👈
+  robot_3 Q-values: [UP:3067.421, DOWN:3012.739, LEFT:3118.049, RIGHT:2970.052, STAY:2973.280] Selected: LEFT 👈
+[Step    12] Survival: 2/4 | Mean Reward: -22.69 | Collisions: 14 (Active: 14, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=908, Collisions=6 (Active: 6, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→1]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=99, Collisions=1 (Active: 1, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→1, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2363.823, DOWN:2269.628, LEFT:2279.330, RIGHT:2408.354, STAY:2338.111] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-34.038, DOWN:-23.025, LEFT:-4.808, RIGHT:-53.305, STAY:-21.721] Selected: LEFT 👈
+  robot_2 Q-values: [UP:-2920.535, DOWN:-1090.598, LEFT:-7600.453, RIGHT:-3519.528, STAY:-6389.234] Selected: DOWN 👈
+  robot_3 Q-values: [UP:3027.467, DOWN:2978.824, LEFT:3082.242, RIGHT:2940.984, STAY:2940.558] Selected: LEFT 👈
+[Step    13] Survival: 2/4 | Mean Reward: -15.41 | Collisions: 16 (Active: 16, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=887, Collisions=7 (Active: 7, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→2]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=98, Collisions=2 (Active: 2, Passive: 0), Charges=3, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→2, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2343.694, DOWN:2258.135, LEFT:2265.326, RIGHT:2384.551, STAY:2326.017] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-33.323, DOWN:-24.287, LEFT:-7.885, RIGHT:-55.097, STAY:-20.757] Selected: LEFT 👈
+  robot_2 Q-values: [UP:-2597.097, DOWN:-715.473, LEFT:-7408.914, RIGHT:-3060.669, STAY:-6076.718] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2988.021, DOWN:2945.495, LEFT:3046.969, RIGHT:2912.276, STAY:2908.351] Selected: LEFT 👈
+[Step    14] Survival: 2/4 | Mean Reward: -8.14 | Collisions: 18 (Active: 18, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=866, Collisions=8 (Active: 8, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→3]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=97, Collisions=3 (Active: 3, Passive: 0), Charges=4, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→3, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2325.336, DOWN:2251.083, LEFT:2251.934, RIGHT:2363.400, STAY:2317.703] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-30.914, DOWN:-22.039, LEFT:-8.582, RIGHT:-54.436, STAY:-18.440] Selected: LEFT 👈
+  robot_2 Q-values: [UP:-2261.097, DOWN:-328.176, LEFT:-7210.305, RIGHT:-2588.434, STAY:-5754.625] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2951.956, DOWN:2916.446, LEFT:3014.446, RIGHT:2886.957, STAY:2879.019] Selected: LEFT 👈
+[Step    15] Survival: 2/4 | Mean Reward: -0.86 | Collisions: 20 (Active: 20, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=845, Collisions=9 (Active: 9, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→4]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=96, Collisions=4 (Active: 4, Passive: 0), Charges=5, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→4, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2309.388, DOWN:2246.471, LEFT:2239.478, RIGHT:2343.907, STAY:2312.820] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-29.048, DOWN:-21.190, LEFT:-11.296, RIGHT:-54.501, STAY:-17.157] Selected: LEFT 👈
+  robot_2 Q-values: [UP:-1919.566, DOWN:64.551, LEFT:-7008.523, RIGHT:-2110.341, STAY:-5428.296] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2917.625, DOWN:2888.240, LEFT:2979.417, RIGHT:2859.885, STAY:2848.237] Selected: LEFT 👈
+[Step    16] Survival: 2/4 | Mean Reward: 6.41 | Collisions: 22 (Active: 22, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=824, Collisions=10 (Active: 10, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→5]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=95, Collisions=5 (Active: 5, Passive: 0), Charges=6, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2292.023, DOWN:2233.141, LEFT:2217.953, RIGHT:2321.934, STAY:2300.784] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-26.838, DOWN:-19.798, LEFT:-13.455, RIGHT:-54.029, STAY:-15.749] Selected: LEFT 👈
+  robot_2 Q-values: [UP:-1563.332, DOWN:471.809, LEFT:-6798.062, RIGHT:-1616.762, STAY:-5090.406] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2892.953, DOWN:2872.822, LEFT:2953.521, RIGHT:2845.215, STAY:2830.088] Selected: LEFT 👈
+[Step    17] Survival: 2/4 | Mean Reward: 13.69 | Collisions: 24 (Active: 24, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=803, Collisions=11 (Active: 11, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→6]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=94, Collisions=6 (Active: 6, Passive: 0), Charges=7, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→6, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2270.896, DOWN:2215.496, LEFT:2191.433, RIGHT:2302.555, STAY:2284.124] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-24.602, DOWN:-17.296, LEFT:-14.374, RIGHT:-52.613, STAY:-13.784] Selected: STAY 👈
+  robot_2 Q-values: [UP:-1211.519, DOWN:875.598, LEFT:-6589.211, RIGHT:-1127.434, STAY:-4754.859] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2880.653, DOWN:2870.833, LEFT:2939.377, RIGHT:2842.895, STAY:2824.560] Selected: LEFT 👈
+[Step    18] Survival: 2/4 | Mean Reward: 20.96 | Collisions: 26 (Active: 26, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=782, Collisions=12 (Active: 12, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→7]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=93, Collisions=7 (Active: 7, Passive: 0), Charges=8, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→7, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2255.041, DOWN:2208.157, LEFT:2174.691, RIGHT:2291.586, STAY:2277.040] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-22.339, DOWN:-14.687, LEFT:-15.169, RIGHT:-51.112, STAY:-11.731] Selected: STAY 👈
+  robot_2 Q-values: [UP:-857.723, DOWN:1281.418, LEFT:-6379.812, RIGHT:-635.544, STAY:-4417.765] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2874.498, DOWN:2876.089, LEFT:2930.802, RIGHT:2847.933, STAY:2827.149] Selected: LEFT 👈
+[Step    19] Survival: 2/4 | Mean Reward: 28.24 | Collisions: 28 (Active: 28, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=761, Collisions=13 (Active: 13, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→8]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=92, Collisions=8 (Active: 8, Passive: 0), Charges=9, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→8, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2239.993, DOWN:2204.331, LEFT:2162.286, RIGHT:2282.989, STAY:2271.790] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-20.406, DOWN:-11.392, LEFT:-16.914, RIGHT:-50.134, STAY:-9.816] Selected: STAY 👈
+  robot_2 Q-values: [UP:-500.691, DOWN:1689.934, LEFT:-6169.867, RIGHT:-140.044, STAY:-4078.687] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2865.729, DOWN:2876.207, LEFT:2922.845, RIGHT:2846.843, STAY:2825.378] Selected: LEFT 👈
+[Step    20] Survival: 2/4 | Mean Reward: 35.51 | Collisions: 30 (Active: 30, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=740, Collisions=14 (Active: 14, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→9]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=91, Collisions=9 (Active: 9, Passive: 0), Charges=10, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→9, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2225.652, DOWN:2201.189, LEFT:2152.437, RIGHT:2275.406, STAY:2266.949] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-17.309, DOWN:-9.248, LEFT:-20.316, RIGHT:-50.454, STAY:-8.571] Selected: STAY 👈
+  robot_2 Q-values: [UP:-100.957, DOWN:2155.324, LEFT:-5925.273, RIGHT:386.847, STAY:-3713.890] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2853.846, DOWN:2870.106, LEFT:2916.665, RIGHT:2838.208, STAY:2818.721] Selected: LEFT 👈
+[Step    21] Survival: 2/4 | Mean Reward: 42.79 | Collisions: 32 (Active: 32, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=719, Collisions=15 (Active: 15, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→10]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=90, Collisions=10 (Active: 10, Passive: 0), Charges=11, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→10, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2209.778, DOWN:2196.564, LEFT:2144.755, RIGHT:2268.713, STAY:2259.936] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-14.126, DOWN:-6.945, LEFT:-23.417, RIGHT:-50.713, STAY:-7.162] Selected: DOWN 👈
+  robot_2 Q-values: [UP:301.996, DOWN:2627.418, LEFT:-5675.875, RIGHT:914.519, STAY:-3347.500] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2836.585, DOWN:2855.822, LEFT:2907.808, RIGHT:2823.364, STAY:2807.169] Selected: LEFT 👈
+[Step    22] Survival: 2/4 | Mean Reward: 50.06 | Collisions: 34 (Active: 34, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=698, Collisions=16 (Active: 16, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→11]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=89, Collisions=11 (Active: 11, Passive: 0), Charges=12, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→11, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2195.725, DOWN:2191.137, LEFT:2139.524, RIGHT:2259.753, STAY:2252.290] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-11.132, DOWN:-4.554, LEFT:-26.351, RIGHT:-50.770, STAY:-5.700] Selected: DOWN 👈
+  robot_2 Q-values: [UP:683.684, DOWN:3082.434, LEFT:-5433.289, RIGHT:1418.519, STAY:-2995.937] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2821.018, DOWN:2843.757, LEFT:2897.141, RIGHT:2807.087, STAY:2795.789] Selected: LEFT 👈
+[Step    23] Survival: 2/4 | Mean Reward: 57.34 | Collisions: 36 (Active: 36, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=677, Collisions=17 (Active: 17, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→12]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=88, Collisions=12 (Active: 12, Passive: 0), Charges=13, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→12, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2184.007, DOWN:2188.685, LEFT:2139.869, RIGHT:2254.553, STAY:2249.239] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-9.480, DOWN:-2.200, LEFT:-28.099, RIGHT:-49.203, STAY:-4.457] Selected: DOWN 👈
+  robot_2 Q-values: [UP:1063.324, DOWN:3535.176, LEFT:-5192.648, RIGHT:1920.034, STAY:-2646.656] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2805.265, DOWN:2829.821, LEFT:2884.601, RIGHT:2787.364, STAY:2782.156] Selected: LEFT 👈
+[Step    24] Survival: 2/4 | Mean Reward: 64.61 | Collisions: 38 (Active: 38, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=656, Collisions=18 (Active: 18, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→13]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=87, Collisions=13 (Active: 13, Passive: 0), Charges=14, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→13, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2171.167, DOWN:2183.698, LEFT:2139.175, RIGHT:2246.062, STAY:2241.701] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-7.977, DOWN:-0.088, LEFT:-29.152, RIGHT:-48.002, STAY:-2.640] Selected: DOWN 👈
+  robot_2 Q-values: [UP:1434.137, DOWN:3975.230, LEFT:-4966.547, RIGHT:2409.050, STAY:-2311.484] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2791.137, DOWN:2816.965, LEFT:2872.687, RIGHT:2765.894, STAY:2767.498] Selected: LEFT 👈
+[Step    25] Survival: 2/4 | Mean Reward: 71.89 | Collisions: 40 (Active: 40, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=635, Collisions=19 (Active: 19, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→14]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=86, Collisions=14 (Active: 14, Passive: 0), Charges=15, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→14, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2160.981, DOWN:2179.298, LEFT:2137.426, RIGHT:2241.240, STAY:2233.735] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-5.360, DOWN:3.205, LEFT:-28.541, RIGHT:-46.742, STAY:0.350] Selected: DOWN 👈
+  robot_2 Q-values: [UP:1808.965, DOWN:4417.707, LEFT:-4740.484, RIGHT:2902.972, STAY:-1973.875] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2774.448, DOWN:2800.065, LEFT:2864.573, RIGHT:2743.792, STAY:2752.675] Selected: LEFT 👈
+[Step    26] Survival: 2/4 | Mean Reward: 79.16 | Collisions: 42 (Active: 42, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=614, Collisions=20 (Active: 20, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→15]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=85, Collisions=15 (Active: 15, Passive: 0), Charges=16, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→15, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2156.412, DOWN:2180.313, LEFT:2140.300, RIGHT:2245.085, STAY:2230.721] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-4.022, DOWN:4.961, LEFT:-28.301, RIGHT:-45.949, STAY:2.463] Selected: DOWN 👈
+  robot_2 Q-values: [UP:2186.684, DOWN:4862.059, LEFT:-4513.781, RIGHT:3400.941, STAY:-1633.750] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2781.109, DOWN:2810.587, LEFT:2881.278, RIGHT:2755.496, STAY:2765.940] Selected: LEFT 👈
+[Step    27] Survival: 2/4 | Mean Reward: 86.44 | Collisions: 44 (Active: 44, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=593, Collisions=21 (Active: 21, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→16]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=84, Collisions=16 (Active: 16, Passive: 0), Charges=17, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→16, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2154.715, DOWN:2183.147, LEFT:2145.569, RIGHT:2250.950, STAY:2230.070] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-2.445, DOWN:6.720, LEFT:-27.854, RIGHT:-44.429, STAY:4.666] Selected: DOWN 👈
+  robot_2 Q-values: [UP:2557.387, DOWN:5302.121, LEFT:-4274.945, RIGHT:3897.503, STAY:-1285.422] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2794.092, DOWN:2825.755, LEFT:2901.824, RIGHT:2775.030, STAY:2784.720] Selected: LEFT 👈
+[Step    28] Survival: 2/4 | Mean Reward: 93.71 | Collisions: 46 (Active: 46, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=572, Collisions=22 (Active: 22, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→17]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=83, Collisions=17 (Active: 17, Passive: 0), Charges=18, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→17, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2159.087, DOWN:2191.954, LEFT:2155.681, RIGHT:2262.323, STAY:2235.919] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-0.270, DOWN:7.102, LEFT:-28.051, RIGHT:-43.822, STAY:6.046] Selected: DOWN 👈
+  robot_2 Q-values: [UP:2926.059, DOWN:5713.176, LEFT:-4059.781, RIGHT:4374.519, STAY:-955.390] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2806.957, DOWN:2830.389, LEFT:2919.802, RIGHT:2788.762, STAY:2801.389] Selected: LEFT 👈
+[Step    29] Survival: 2/4 | Mean Reward: 100.99 | Collisions: 48 (Active: 48, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=551, Collisions=23 (Active: 23, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→18]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=82, Collisions=18 (Active: 18, Passive: 0), Charges=19, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→18, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2158.957, DOWN:2197.245, LEFT:2162.535, RIGHT:2269.502, STAY:2237.189] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:2.786, DOWN:9.274, LEFT:-28.136, RIGHT:-42.313, STAY:8.239] Selected: DOWN 👈
+  robot_2 Q-values: [UP:3294.762, DOWN:6124.246, LEFT:-3844.617, RIGHT:4851.565, STAY:-625.367] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2823.056, DOWN:2828.864, LEFT:2947.866, RIGHT:2804.706, STAY:2824.001] Selected: LEFT 👈
+[Step    30] Survival: 2/4 | Mean Reward: 108.26 | Collisions: 50 (Active: 50, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=530, Collisions=24 (Active: 24, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→19]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=81, Collisions=19 (Active: 19, Passive: 0), Charges=20, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→19, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2159.854, DOWN:2203.560, LEFT:2169.192, RIGHT:2276.132, STAY:2241.139] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:5.965, DOWN:11.675, LEFT:-26.189, RIGHT:-39.595, STAY:11.371] Selected: DOWN 👈
+  robot_2 Q-values: [UP:3661.653, DOWN:6532.262, LEFT:-3632.274, RIGHT:5325.565, STAY:-298.273] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2814.879, DOWN:2813.636, LEFT:2947.959, RIGHT:2789.941, STAY:2823.596] Selected: LEFT 👈
+[Step    31] Survival: 2/4 | Mean Reward: 115.54 | Collisions: 52 (Active: 52, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=509, Collisions=25 (Active: 25, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→20]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=80, Collisions=20 (Active: 20, Passive: 0), Charges=21, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→20, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2163.653, DOWN:2214.494, LEFT:2177.887, RIGHT:2285.419, STAY:2249.440] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:8.825, DOWN:15.266, LEFT:-20.405, RIGHT:-34.988, STAY:15.361] Selected: STAY 👈
+  robot_2 Q-values: [UP:4050.496, DOWN:6951.535, LEFT:-3428.258, RIGHT:5812.269, STAY:28.039] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2795.913, DOWN:2798.616, LEFT:2940.942, RIGHT:2764.707, STAY:2821.785] Selected: LEFT 👈
+[Step    32] Survival: 2/4 | Mean Reward: 122.81 | Collisions: 54 (Active: 54, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=488, Collisions=26 (Active: 26, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→21]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=79, Collisions=21 (Active: 21, Passive: 0), Charges=22, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→21, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2166.429, DOWN:2225.142, LEFT:2183.221, RIGHT:2292.946, STAY:2255.428] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:10.469, DOWN:19.320, LEFT:-13.979, RIGHT:-29.391, STAY:19.658] Selected: STAY 👈
+  robot_2 Q-values: [UP:4433.918, DOWN:7362.645, LEFT:-3231.422, RIGHT:6289.753, STAY:345.836] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2765.004, DOWN:2777.804, LEFT:2926.321, RIGHT:2727.454, STAY:2812.743] Selected: LEFT 👈
+[Step    33] Survival: 2/4 | Mean Reward: 130.09 | Collisions: 56 (Active: 56, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=467, Collisions=27 (Active: 27, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→22]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=78, Collisions=22 (Active: 22, Passive: 0), Charges=23, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→22, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2161.876, DOWN:2227.738, LEFT:2179.012, RIGHT:2293.054, STAY:2252.811] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:9.159, DOWN:20.454, LEFT:-9.177, RIGHT:-24.117, STAY:22.062] Selected: STAY 👈
+  robot_2 Q-values: [UP:4814.934, DOWN:7770.559, LEFT:-3037.000, RIGHT:6763.659, STAY:660.602] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2727.105, DOWN:2751.521, LEFT:2916.652, RIGHT:2687.142, STAY:2803.220] Selected: LEFT 👈
+[Step    34] Survival: 2/4 | Mean Reward: 137.36 | Collisions: 58 (Active: 58, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=446, Collisions=28 (Active: 28, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→23]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=77, Collisions=23 (Active: 23, Passive: 0), Charges=24, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→23, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2156.260, DOWN:2227.201, LEFT:2173.007, RIGHT:2291.745, STAY:2248.396] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:8.874, DOWN:22.166, LEFT:-3.198, RIGHT:-17.442, STAY:24.507] Selected: STAY 👈
+  robot_2 Q-values: [UP:5195.934, DOWN:8178.480, LEFT:-2842.582, RIGHT:7237.534, STAY:975.367] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2712.475, DOWN:2751.833, LEFT:2948.251, RIGHT:2682.354, STAY:2827.094] Selected: LEFT 👈
+[Step    35] Survival: 2/4 | Mean Reward: 144.64 | Collisions: 60 (Active: 60, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=425, Collisions=29 (Active: 29, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→24]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=76, Collisions=24 (Active: 24, Passive: 0), Charges=25, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→24, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2150.738, DOWN:2224.464, LEFT:2166.880, RIGHT:2288.337, STAY:2242.496] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:8.870, DOWN:24.677, LEFT:3.005, RIGHT:-10.403, STAY:26.853] Selected: STAY 👈
+  robot_2 Q-values: [UP:5595.965, DOWN:8606.191, LEFT:-2640.356, RIGHT:7732.128, STAY:1303.250] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2685.821, DOWN:2751.647, LEFT:2977.712, RIGHT:2678.518, STAY:2848.726] Selected: LEFT 👈
+[Step    36] Survival: 2/4 | Mean Reward: 151.91 | Collisions: 62 (Active: 62, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=404, Collisions=30 (Active: 30, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→25]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=75, Collisions=25 (Active: 25, Passive: 0), Charges=26, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→25, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2139.295, DOWN:2215.835, LEFT:2156.896, RIGHT:2280.864, STAY:2232.371] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:7.741, DOWN:28.660, LEFT:9.579, RIGHT:-4.343, STAY:29.033] Selected: STAY 👈
+  robot_2 Q-values: [UP:6057.121, DOWN:9083.004, LEFT:-2425.180, RIGHT:8288.878, STAY:1665.860] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2668.583, DOWN:2763.937, LEFT:3004.833, RIGHT:2688.160, STAY:2877.083] Selected: LEFT 👈
+[Step    37] Survival: 2/4 | Mean Reward: 159.19 | Collisions: 64 (Active: 64, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=383, Collisions=31 (Active: 31, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→26]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=74, Collisions=26 (Active: 26, Passive: 0), Charges=27, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→26, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2124.424, DOWN:2204.062, LEFT:2147.930, RIGHT:2272.920, STAY:2220.166] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:6.501, DOWN:33.204, LEFT:17.171, RIGHT:-0.260, STAY:31.045] Selected: DOWN 👈
+  robot_2 Q-values: [UP:6592.043, DOWN:9628.004, LEFT:-2188.660, RIGHT:8925.753, STAY:2074.641] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2649.010, DOWN:2786.646, LEFT:3029.088, RIGHT:2704.251, STAY:2907.322] Selected: LEFT 👈
+[Step    38] Survival: 2/4 | Mean Reward: 166.46 | Collisions: 66 (Active: 66, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=362, Collisions=32 (Active: 32, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→27]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=73, Collisions=27 (Active: 27, Passive: 0), Charges=28, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→27, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2106.039, DOWN:2191.921, LEFT:2139.360, RIGHT:2262.013, STAY:2206.577] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:5.319, DOWN:38.684, LEFT:24.975, RIGHT:1.137, STAY:32.030] Selected: DOWN 👈
+  robot_2 Q-values: [UP:7178.090, DOWN:10222.090, LEFT:-1939.731, RIGHT:9621.519, STAY:2515.375] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2617.507, DOWN:2804.823, LEFT:3046.413, RIGHT:2702.005, STAY:2922.308] Selected: LEFT 👈
+[Step    39] Survival: 2/4 | Mean Reward: 173.74 | Collisions: 68 (Active: 68, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=341, Collisions=33 (Active: 33, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→28]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=72, Collisions=28 (Active: 28, Passive: 0), Charges=29, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→28, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2081.700, DOWN:2172.350, LEFT:2123.291, RIGHT:2244.845, STAY:2185.328] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:4.187, DOWN:45.347, LEFT:33.478, RIGHT:2.763, STAY:33.274] Selected: DOWN 👈
+  robot_2 Q-values: [UP:7857.027, DOWN:10888.645, LEFT:-1661.578, RIGHT:10424.097, STAY:3024.102] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2638.161, DOWN:2867.914, LEFT:3106.783, RIGHT:2754.654, STAY:2975.948] Selected: LEFT 👈
+[Step    40] Survival: 2/4 | Mean Reward: 181.01 | Collisions: 70 (Active: 70, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=320, Collisions=34 (Active: 34, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→29]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=71, Collisions=29 (Active: 29, Passive: 0), Charges=30, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→29, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2058.408, DOWN:2155.260, LEFT:2107.266, RIGHT:2233.718, STAY:2165.908] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:3.007, DOWN:52.362, LEFT:44.551, RIGHT:6.872, STAY:36.381] Selected: DOWN 👈
+  robot_2 Q-values: [UP:8587.668, DOWN:11580.598, LEFT:-1368.188, RIGHT:11266.175, STAY:3559.477] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2671.057, DOWN:2943.205, LEFT:3191.347, RIGHT:2818.317, STAY:3042.380] Selected: LEFT 👈
+[Step    41] Survival: 2/4 | Mean Reward: 188.29 | Collisions: 72 (Active: 72, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=299, Collisions=35 (Active: 35, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→30]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=70, Collisions=30 (Active: 30, Passive: 0), Charges=31, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→30, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2032.887, DOWN:2138.247, LEFT:2091.870, RIGHT:2224.810, STAY:2146.506] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-0.687, DOWN:62.019, LEFT:52.478, RIGHT:11.354, STAY:39.833] Selected: DOWN 👈
+  robot_2 Q-values: [UP:9367.949, DOWN:12272.996, LEFT:-1062.543, RIGHT:12101.612, STAY:4092.649] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2722.289, DOWN:3036.795, LEFT:3308.957, RIGHT:2903.045, STAY:3123.971] Selected: LEFT 👈
+[Step    42] Survival: 2/4 | Mean Reward: 195.56 | Collisions: 74 (Active: 74, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=278, Collisions=36 (Active: 36, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→31]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=69, Collisions=31 (Active: 31, Passive: 0), Charges=32, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→31, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:2007.723, DOWN:2119.987, LEFT:2074.538, RIGHT:2214.655, STAY:2125.007] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:2.431, DOWN:75.849, LEFT:61.956, RIGHT:16.514, STAY:45.223] Selected: DOWN 👈
+  robot_2 Q-values: [UP:10037.840, DOWN:12855.020, LEFT:-804.649, RIGHT:12811.284, STAY:4544.219] Selected: DOWN 👈
+  robot_3 Q-values: [UP:2726.452, DOWN:3082.521, LEFT:3384.931, RIGHT:2947.130, STAY:3150.214] Selected: LEFT 👈
+[Step    43] Survival: 2/4 | Mean Reward: 202.84 | Collisions: 76 (Active: 76, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=257, Collisions=37 (Active: 37, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→32]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=68, Collisions=32 (Active: 32, Passive: 0), Charges=33, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→32, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:1976.027, DOWN:2094.317, LEFT:2049.726, RIGHT:2200.304, STAY:2095.316] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:2.347, DOWN:84.186, LEFT:70.010, RIGHT:17.489, STAY:47.952] Selected: DOWN 👈
+  robot_2 Q-values: [UP:10766.605, DOWN:13467.371, LEFT:-556.387, RIGHT:13553.362, STAY:5002.188] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2761.906, DOWN:3141.984, LEFT:3455.500, RIGHT:3006.253, STAY:3191.414] Selected: LEFT 👈
+[Step    44] Survival: 2/4 | Mean Reward: 210.11 | Collisions: 78 (Active: 78, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=236, Collisions=38 (Active: 38, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→33]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=67, Collisions=33 (Active: 33, Passive: 0), Charges=34, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→33, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:1900.434, DOWN:2040.410, LEFT:1994.738, RIGHT:2146.779, STAY:2030.466] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:3.946, DOWN:93.247, LEFT:79.495, RIGHT:19.147, STAY:51.227] Selected: DOWN 👈
+  robot_2 Q-values: [UP:11701.434, DOWN:14228.074, LEFT:-226.477, RIGHT:14484.019, STAY:5599.985] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2819.721, DOWN:3212.199, LEFT:3548.430, RIGHT:3087.729, STAY:3249.975] Selected: LEFT 👈
+[Step    45] Survival: 2/4 | Mean Reward: 217.39 | Collisions: 80 (Active: 80, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=215, Collisions=39 (Active: 39, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→34]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=66, Collisions=34 (Active: 34, Passive: 0), Charges=35, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→34, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:1772.505, DOWN:1946.162, LEFT:1894.014, RIGHT:2042.064, STAY:1917.097] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:8.834, DOWN:97.348, LEFT:80.308, RIGHT:20.019, STAY:52.318] Selected: DOWN 👈
+  robot_2 Q-values: [UP:12608.184, DOWN:14949.293, LEFT:83.164, RIGHT:15369.690, STAY:6166.618] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2825.794, DOWN:3227.438, LEFT:3599.684, RIGHT:3116.010, STAY:3257.680] Selected: LEFT 👈
+[Step    46] Survival: 2/4 | Mean Reward: 224.66 | Collisions: 82 (Active: 82, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=194, Collisions=40 (Active: 40, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→35]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=65, Collisions=35 (Active: 35, Passive: 0), Charges=36, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→35, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:1587.763, DOWN:1805.484, LEFT:1731.386, RIGHT:1883.165, STAY:1747.897] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:12.048, DOWN:99.377, LEFT:77.741, RIGHT:18.443, STAY:52.134] Selected: DOWN 👈
+  robot_2 Q-values: [UP:13099.777, DOWN:15271.262, LEFT:177.648, RIGHT:15775.675, STAY:6396.469] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2831.699, DOWN:3245.531, LEFT:3640.337, RIGHT:3158.642, STAY:3272.043] Selected: LEFT 👈
+[Step    47] Survival: 2/4 | Mean Reward: 231.94 | Collisions: 84 (Active: 84, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=173, Collisions=41 (Active: 41, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→36]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=64, Collisions=36 (Active: 36, Passive: 0), Charges=37, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→36, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:1380.867, DOWN:1629.943, LEFT:1486.772, RIGHT:1668.330, STAY:1542.641] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:11.388, DOWN:98.997, LEFT:73.933, RIGHT:17.019, STAY:49.916] Selected: DOWN 👈
+  robot_2 Q-values: [UP:13468.512, DOWN:15466.387, LEFT:195.054, RIGHT:16036.198, STAY:6517.930] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:2924.520, DOWN:3351.336, LEFT:3770.452, RIGHT:3323.037, STAY:3385.098] Selected: LEFT 👈
+[Step    48] Survival: 2/4 | Mean Reward: 239.21 | Collisions: 86 (Active: 86, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=152, Collisions=42 (Active: 42, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→37]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=63, Collisions=37 (Active: 37, Passive: 0), Charges=38, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→37, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:1149.535, DOWN:1420.782, LEFT:1220.299, RIGHT:1440.593, STAY:1319.879] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:8.690, DOWN:96.714, LEFT:73.512, RIGHT:16.812, STAY:46.905] Selected: DOWN 👈
+  robot_2 Q-values: [UP:13713.434, DOWN:15468.965, LEFT:71.285, RIGHT:16139.589, STAY:6499.157] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:3057.774, DOWN:3507.313, LEFT:3953.156, RIGHT:3521.839, STAY:3542.657] Selected: LEFT 👈
+[Step    49] Survival: 2/4 | Mean Reward: 246.49 | Collisions: 88 (Active: 88, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=131, Collisions=43 (Active: 43, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→38]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=62, Collisions=38 (Active: 38, Passive: 0), Charges=39, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→38, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:957.808, DOWN:1235.294, LEFT:995.831, RIGHT:1258.436, STAY:1136.905] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:3.071, DOWN:87.513, LEFT:67.859, RIGHT:8.426, STAY:37.158] Selected: DOWN 👈
+  robot_2 Q-values: [UP:14049.074, DOWN:15533.074, LEFT:-13.414, RIGHT:16339.487, STAY:6551.024] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:3217.672, DOWN:3693.748, LEFT:4164.781, RIGHT:3738.249, STAY:3728.093] Selected: LEFT 👈
+[Step    50] Survival: 2/4 | Mean Reward: 253.76 | Collisions: 90 (Active: 90, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=110, Collisions=44 (Active: 44, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→39]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=61, Collisions=39 (Active: 39, Passive: 0), Charges=40, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→39, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:701.344, DOWN:994.905, LEFT:710.840, RIGHT:1014.211, STAY:892.356] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:0.506, DOWN:79.094, LEFT:64.576, RIGHT:-0.533, STAY:27.900] Selected: DOWN 👈
+  robot_2 Q-values: [UP:14476.121, DOWN:15703.996, LEFT:13.172, RIGHT:16659.996, STAY:6718.696] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:3446.505, DOWN:3929.247, LEFT:4426.050, RIGHT:4004.154, STAY:3963.009] Selected: LEFT 👈
+[Step    51] Survival: 2/4 | Mean Reward: 261.04 | Collisions: 92 (Active: 92, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=89, Collisions=45 (Active: 45, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→40]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=60, Collisions=40 (Active: 40, Passive: 0), Charges=41, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→40, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:414.531, DOWN:736.478, LEFT:403.505, RIGHT:750.083, STAY:624.835] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-6.127, DOWN:68.352, LEFT:62.820, RIGHT:-6.555, STAY:20.191] Selected: DOWN 👈
+  robot_2 Q-values: [UP:15109.621, DOWN:16065.965, LEFT:130.183, RIGHT:17165.340, STAY:7009.110] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:3696.490, DOWN:4175.757, LEFT:4692.782, RIGHT:4264.181, STAY:4205.525] Selected: LEFT 👈
+[Step    52] Survival: 2/4 | Mean Reward: 268.31 | Collisions: 94 (Active: 94, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=68, Collisions=46 (Active: 46, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→41]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=59, Collisions=41 (Active: 41, Passive: 0), Charges=42, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→41, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:180.300, DOWN:520.085, LEFT:160.861, RIGHT:544.689, STAY:422.945] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-17.677, DOWN:55.676, LEFT:62.289, RIGHT:-6.305, STAY:16.052] Selected: LEFT 👈
+  robot_2 Q-values: [UP:15761.824, DOWN:16538.426, LEFT:343.558, RIGHT:17763.676, STAY:7394.547] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:3869.375, DOWN:4335.445, LEFT:4888.451, RIGHT:4438.359, STAY:4361.708] Selected: LEFT 👈
+[Step    53] Survival: 2/4 | Mean Reward: 275.59 | Collisions: 96 (Active: 96, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=47, Collisions=47 (Active: 47, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+wandb: updating run metadata
+wandb: uploading output.log; uploading wandb-summary.json
+wandb: uploading history steps 0-56, summary, console lines 0-1078
+wandb: 
+wandb: Run history:
+wandb:    final/mean_cumulative_reward ▁
+wandb:           final/robot_0/charges ▁
+wandb:        final/robot_0/collisions ▁
+wandb: final/robot_0/cumulative_reward ▁
+wandb:            final/robot_0/energy ▁
+wandb:   final/robot_0/immediate_kills ▁
+wandb:           final/robot_0/is_dead ▁
+wandb:  final/robot_0/non_home_charges ▁
+wandb:        final/robot_0/position_x ▁
+wandb:        final/robot_0/position_y ▁
+wandb:                            +119 ...
+wandb: 
+wandb: Run summary:
+wandb:    final/mean_cumulative_reward 272.5875
+wandb:           final/robot_0/charges 2
+wandb:        final/robot_0/collisions 50
+wandb: final/robot_0/cumulative_reward -84.5
+wandb:            final/robot_0/energy 0
+wandb:   final/robot_0/immediate_kills 1
+wandb:           final/robot_0/is_dead 1
+wandb:  final/robot_0/non_home_charges 0
+wandb:        final/robot_0/position_x 1
+wandb:        final/robot_0/position_y 2
+wandb:                            +119 ...
+wandb: 
+wandb: 🚀 View run eval-massacre-1v3-5x5-center-ep5000-long at: https://wandb.ai/lazyhao-national-taiwan-university/robot-vacuum-eval/runs/6uadndld
+wandb: ⭐️ View project at: https://wandb.ai/lazyhao-national-taiwan-university/robot-vacuum-eval
+wandb: Synced 6 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20251216_102354-6uadndld/logs
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→42]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=58, Collisions=42 (Active: 42, Passive: 0), Charges=43, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→42, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:-22.284, DOWN:380.111, LEFT:-9.214, RIGHT:425.929, STAY:289.343] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-24.366, DOWN:46.938, LEFT:66.664, RIGHT:-1.690, STAY:14.836] Selected: LEFT 👈
+  robot_2 Q-values: [UP:16555.980, DOWN:17198.160, LEFT:711.742, RIGHT:18582.707, STAY:7972.915] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:4026.720, DOWN:4500.476, LEFT:5080.104, RIGHT:4620.974, STAY:4522.890] Selected: LEFT 👈
+[Step    54] Survival: 2/4 | Mean Reward: 282.86 | Collisions: 98 (Active: 98, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=26, Collisions=48 (Active: 48, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→43]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=57, Collisions=43 (Active: 43, Passive: 0), Charges=44, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→43, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:-241.542, DOWN:236.035, LEFT:-201.136, RIGHT:315.085, STAY:150.898] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-25.092, DOWN:39.833, LEFT:68.412, RIGHT:3.966, STAY:14.739] Selected: LEFT 👈
+  robot_2 Q-values: [UP:17252.777, DOWN:17823.441, LEFT:1070.953, RIGHT:19344.973, STAY:8516.555] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:4218.255, DOWN:4715.879, LEFT:5304.609, RIGHT:4862.067, STAY:4734.105] Selected: LEFT 👈
+[Step    55] Survival: 2/4 | Mean Reward: 290.14 | Collisions: 100 (Active: 100, Passive: 0) | Immediate Kills: 1 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0: Pos=(1,2), Energy=5, Collisions=49 (Active: 49, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→44]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=56, Collisions=44 (Active: 44, Passive: 0), Charges=45, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→44, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+  robot_0 Q-values: [UP:-456.358, DOWN:93.752, LEFT:-385.435, RIGHT:198.369, STAY:12.384] Selected: RIGHT 👈
+  robot_1 Q-values: [UP:-25.081, DOWN:33.589, LEFT:69.905, RIGHT:7.017, STAY:13.311] Selected: LEFT 👈
+  robot_2 Q-values: [UP:17901.418, DOWN:18506.676, LEFT:1484.105, RIGHT:20142.137, STAY:9096.070] Selected: RIGHT 👈
+  robot_3 Q-values: [UP:4410.809, DOWN:4899.552, LEFT:5515.112, RIGHT:5098.222, STAY:4933.458] Selected: LEFT 👈
+[Step    56] Survival: 1/4 | Mean Reward: 272.59 | Collisions: 102 (Active: 102, Passive: 0) | Immediate Kills: 2 | Non-Home Charges: 0
+  Per-Agent Status:
+    robot_0 💀: Pos=(1,2), Energy=0, Collisions=50 (Active: 50, Passive: 0), Charges=2, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→0, 1→5, 2→0, 3→45]
+      CollidedByRobot: [0→0, 1→5, 2→0, 3→0]
+    robot_1 💀: Pos=(3,2), Energy=0, Collisions=5 (Active: 5, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→5, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→5, 1→0, 2→0, 3→0]
+    robot_2 💀: Pos=(4,1), Energy=0, Collisions=2 (Active: 2, Passive: 0), Charges=0, NonHomeCharges=0, ImmediateKills=0
+      ActiveCollisionsWith: [0→0, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+    robot_3: Pos=(2,2), Energy=55, Collisions=45 (Active: 45, Passive: 0), Charges=46, NonHomeCharges=0, ImmediateKills=1
+      ActiveCollisionsWith: [0→45, 1→0, 2→0, 3→0]
+      CollidedByRobot: [0→0, 1→0, 2→0, 3→0]
+
+[Step 56] Only robot_3 survives. Episode complete.
+
+============================================================
+FINAL SIMULATION SUMMARY
+============================================================
+Total Steps: 56
+Final Survival: 1/4
+Mean Cumulative Reward: 272.59 (std: 641.35)
+Total Collisions: 102
+Total Charges: 48
+Total Non-Home Charges: 0
+Total Immediate Kills: 2
+------------------------------------------------------------
+Per-Agent Final Statistics:
+  robot_0 💀 DEAD
+    Position: (1, 2)
+    Final Energy: 0
+    Cumulative Reward: -84.50
+    Collisions: 50
+    Charges: 2
+    Non-Home Charges: 0
+    Immediate Kills: 1
+    Collided By: [R0→0, R1→5, R2→0, R3→0]
+  robot_1 💀 DEAD
+    Position: (3, 2)
+    Final Energy: 0
+    Cumulative Reward: -104.30
+    Collisions: 5
+    Charges: 0
+    Non-Home Charges: 0
+    Immediate Kills: 0
+    Collided By: [R0→5, R1→0, R2→0, R3→0]
+  robot_2 💀 DEAD
+    Position: (4, 1)
+    Final Energy: 0
+    Cumulative Reward: -104.20
+    Collisions: 2
+    Charges: 0
+    Non-Home Charges: 0
+    Immediate Kills: 0
+    Collided By: [R0→0, R1→0, R2→0, R3→0]
+  robot_3 ✓ ALIVE
+    Position: (2, 2)
+    Final Energy: 55
+    Cumulative Reward: 1383.35
+    Collisions: 45
+    Charges: 46
+    Non-Home Charges: 0
+    Immediate Kills: 1
+    Collided By: [R0→0, R1→0, R2→0, R3→0]
+============================================================
+
+Replay data saved to: /home/bloggerwang/robot-vaccum-rl/models/massacre_5x5_center_20251216_003734/massacre-1v3-5x5-center/eval-massacre-1v3-5x5-center-ep5000-long_replay.json
