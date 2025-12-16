@@ -217,9 +217,8 @@ class RobotVacuumGymEnv:
 
         獎勵結構:
         1. 能量變化獎勵: energy_delta * 0.05
-        2. 充電獎勵: +10.0
+        2. 充電獎勵: +20.0
         3. 死亡懲罰: -100.0
-        4. 存活獎勵: +0.1
         """
         rewards = {}
         robots = state['robots']
@@ -242,10 +241,6 @@ class RobotVacuumGymEnv:
             # 3. 死亡懲罰
             if not robot['is_active'] and prev_robot['is_active']:
                 reward -= 100.0
-
-            # 4. 存活獎勵 (提升 10 倍: 0.01 → 0.1)
-            if robot['is_active']:
-                reward += 0.1
 
             rewards[agent_id] = reward
 
