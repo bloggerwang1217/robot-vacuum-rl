@@ -75,6 +75,10 @@ class IndependentDQNAgent:
         # Replay buffer (simple deque)
         self.memory = deque(maxlen=args.memory_size)
 
+        # N-step learning
+        self.n_step = getattr(args, 'n_step', 1)  # 預設 1-step（原本行為）
+        self.n_step_buffer = deque(maxlen=self.n_step) if self.n_step > 1 else None
+
         # Counters
         self.train_count = 0
 
@@ -111,9 +115,39 @@ class IndependentDQNAgent:
         """
         Store experience to replay buffer
 
-        Standard 1-step DQN transition
+        支援 n-step learning：
+        - n_step=1: 標準 1-step DQN（直接存入）
+        - n_step>1: 累積 n 步後計算 n-step return 再存入
         """
-        self.memory.append((state, action, reward, next_state, done))
+        if self.n_step == 1:
+            # 原本的 1-step 行為
+            self.memory.append((state, action, reward, next_state, done))
+        else:
+            # N-step learning
+            self.n_step_buffer.append((state, action, reward, next_state, done))
+
+            # 當累積滿 n 步，或 episode 結束
+            if len(self.n_step_buffer) == self.n_step or done:
+                # 計算 n-step return（累積折現獎勵）
+                n_step_return = 0
+                for idx, (_, _, r, _, _) in enumerate(self.n_step_buffer):
+                    n_step_return += (self.gamma ** idx) * r
+
+                # 取第一步的 state, action
+                start_state, start_action, _, _, _ = self.n_step_buffer[0]
+
+                # 取最後一步的 next_state, done
+                _, _, _, end_next_state, end_done = self.n_step_buffer[-1]
+
+                # 存入 replay buffer（reward 已經是 n-step return）
+                self.memory.append((start_state, start_action, n_step_return, end_next_state, end_done))
+
+                # Episode 結束時清空
+                if done:
+                    self.n_step_buffer.clear()
+                else:
+                    # 滑動窗口：移除最舊的一步
+                    self.n_step_buffer.popleft()
 
     def train_step(self, replay_start_size: int) -> Dict[str, float]:
         """
@@ -145,12 +179,15 @@ class IndependentDQNAgent:
         q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
 
         # Compute target Q-values (Double DQN to lower overestimation)
+        # N-step learning: 用 γⁿ 而非 γ 來折現
+        # reward 已經在 remember() 中累積為 n-step return
+        gamma_n = self.gamma ** self.n_step
         with torch.no_grad():
             # Select actiom: use q_net to obtain best action
             next_actions = self.q_net(next_states).argmax(1, keepdim=True)
             # Evaluate value: use target_net to evaluate the Q-value
             next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
-            target_q_values = rewards + self.gamma * next_q_values * (1 - dones)
+            target_q_values = rewards + gamma_n * next_q_values * (1 - dones)
 
         # Compute loss (MSE)
         loss = nn.MSELoss()(q_values, target_q_values)
@@ -614,6 +651,8 @@ def main():
     # DQN hyperparameters
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
+    parser.add_argument("--n-step", type=int, default=1,
+                       help="N-step return (1=標準 DQN, 2-5=n-step DQN，看更遠的未來)")
 
     # Epsilon configuration
     parser.add_argument("--use-epsilon-decay", action="store_true",
