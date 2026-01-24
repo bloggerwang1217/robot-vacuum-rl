@@ -66,9 +66,12 @@ class ReplayVisualizer:
 
         # Playback state
         self.current_step = -1  # Start at -1 so step 0 shows initial state
+        self.current_substep = -1  # -1 表示顯示 step 開始前的狀態, 0~N-1 表示各 robot 行動後
         self.is_paused = True  # Start paused
         self.is_running = True
         self.last_recorded_step = -2  # Track last recorded step
+        self.show_substeps = True  # 是否顯示 sub-steps（可切換）
+        self.has_substeps = False  # 是否有 sub-steps 資料（由 _load_replay 設定）
 
         # Colors
         self.COLORS = {
@@ -100,6 +103,16 @@ class ReplayVisualizer:
             print(f"Loaded replay from: {self.replay_file}")
             print(f"  Total steps: {len(data['steps'])}")
             print(f"  Grid size: {data['config']['grid_size']}x{data['config']['grid_size']}")
+
+            # 檢查是否有 sub_steps 資料
+            if data['steps'] and 'sub_steps' in data['steps'][0]:
+                num_robots = len(data['steps'][0]['sub_steps'])
+                print(f"  Sub-steps enabled: {num_robots} robots per step")
+                self.has_substeps = True
+            else:
+                print(f"  Sub-steps: Not available (legacy replay)")
+                self.has_substeps = False
+
             return data
         except FileNotFoundError:
             print(f"Error: Replay file not found: {self.replay_file}")
@@ -136,8 +149,9 @@ class ReplayVisualizer:
         print("\n" + "="*60)
         print("REPLAY CONTROLS:")
         print("  SPACE: Pause/Resume")
-        print("  RIGHT/LEFT: Next/Previous step")
+        print("  RIGHT/LEFT: Next/Previous step (or sub-step)")
         print("  UP/DOWN: Increase/Decrease speed")
+        print("  S: Toggle sub-step view")
         print("  R: Reset to start")
         print("  Q: Quit")
         print("="*60 + "\n")
@@ -148,11 +162,19 @@ class ReplayVisualizer:
             if not self.is_paused:
                 self.step_accumulator += self.speed
                 if self.step_accumulator >= 1.0:
-                    self.current_step = min(
-                        self.current_step + int(self.step_accumulator),
-                        len(self.replay_data['steps']) - 1
-                    )
+                    # 自動播放時前進
+                    for _ in range(int(self.step_accumulator)):
+                        self._step_forward()
                     self.step_accumulator = 0.0
+                    # 檢查是否到達結尾
+                    if self.current_step >= len(self.replay_data['steps']) - 1:
+                        if not (self.has_substeps and self.show_substeps):
+                            self.is_paused = True
+                        else:
+                            step_data = self.replay_data['steps'][self.current_step]
+                            num_substeps = len(step_data.get('sub_steps', []))
+                            if self.current_substep >= num_substeps - 1:
+                                self.is_paused = True
 
             self._draw()
             self.clock.tick(60)  # 60 FPS
@@ -174,16 +196,10 @@ class ReplayVisualizer:
                     status = "PAUSED" if self.is_paused else "PLAYING"
                     print(f"Playback: {status}")
                 elif event.key == pygame.K_RIGHT:
-                    self.current_step = min(
-                        self.current_step + 1,
-                        len(self.replay_data['steps']) - 1
-                    )
+                    self._step_forward()
                     self.is_paused = True
                 elif event.key == pygame.K_LEFT:
-                    if self.current_step == 0:
-                        self.current_step = -1
-                    else:
-                        self.current_step = max(self.current_step - 1, 0)
+                    self._step_backward()
                     self.is_paused = True
                 elif event.key == pygame.K_UP:
                     self.speed = min(self.speed + 0.5, 5.0)
@@ -193,9 +209,148 @@ class ReplayVisualizer:
                     print(f"Speed: {self.speed:.1f}x")
                 elif event.key == pygame.K_r:
                     self.current_step = -1
+                    self.current_substep = -1
                     print("Reset to initial state")
+                elif event.key == pygame.K_s:
+                    # Toggle sub-step view
+                    self.show_substeps = not self.show_substeps
+                    print(f"Sub-step view: {'ON' if self.show_substeps else 'OFF'}")
                 elif event.key == pygame.K_q:
                     self.is_running = False
+
+    def _get_display_state(self, config: Dict) -> Tuple[Dict, Optional[Dict], bool, Optional[int]]:
+        """
+        根據 current_step 和 current_substep 決定要顯示的狀態
+
+        Returns:
+            current_step_data: 當前要顯示的 robot 狀態
+            action_step_data: 要顯示箭頭的動作資料（可能為 None）
+            show_actions: 是否顯示動作箭頭
+            current_robot_id: 當前正在行動的 robot ID（sub-step 模式下），None 表示顯示所有
+        """
+        grid_size = config['grid_size']
+        num_robots = config.get('num_robots', 4)
+
+        if self.current_step == -1:
+            # 初始狀態：robots 在角落
+            initial_positions = [
+                [0, 0], [grid_size - 1, 0], [0, grid_size - 1], [grid_size - 1, grid_size - 1]
+            ]
+            current_step_data = {
+                'robots': {
+                    f'robot_{i}': {
+                        'position': initial_positions[i] if i < len(initial_positions) else [0, 0],
+                        'energy': config['robot_initial_energies'].get(f'robot_{i}', 100),
+                        'is_dead': False
+                    }
+                    for i in range(num_robots)
+                }
+            }
+
+            if len(self.replay_data['steps']) > 0:
+                action_step_data = self.replay_data['steps'][0]
+                show_actions = True
+            else:
+                action_step_data = None
+                show_actions = False
+
+            return current_step_data, action_step_data, show_actions, None
+
+        # 取得當前 step 資料
+        step_data = self.replay_data['steps'][self.current_step]
+
+        # 檢查是否有 sub_steps 且啟用 sub-step 顯示
+        if self.has_substeps and self.show_substeps and 'sub_steps' in step_data:
+            sub_steps = step_data['sub_steps']
+
+            if self.current_substep == -1:
+                # 顯示這個 step 開始前的狀態（= 第一個 sub-step 的 robots_before）
+                if sub_steps:
+                    current_step_data = {'robots': sub_steps[0]['robots_before']}
+                    # 顯示第一個 robot 即將執行的動作
+                    action_step_data = {'actions': {sub_steps[0]['agent_id']: sub_steps[0]['action']}}
+                    return current_step_data, action_step_data, True, sub_steps[0]['robot_id']
+                else:
+                    current_step_data = step_data
+                    return current_step_data, None, False, None
+            else:
+                # 顯示第 current_substep 個 robot 行動後的狀態
+                substep_idx = min(self.current_substep, len(sub_steps) - 1)
+                current_step_data = {'robots': sub_steps[substep_idx]['robots_after']}
+
+                # 顯示下一個 robot 的動作（如果有的話）
+                if substep_idx + 1 < len(sub_steps):
+                    next_substep = sub_steps[substep_idx + 1]
+                    action_step_data = {'actions': {next_substep['agent_id']: next_substep['action']}}
+                    return current_step_data, action_step_data, True, next_substep['robot_id']
+                else:
+                    # 這個 step 的最後一個 sub-step，不顯示箭頭
+                    return current_step_data, None, False, None
+        else:
+            # 沒有 sub-steps 或關閉 sub-step 顯示：使用原有邏輯
+            current_step_data = step_data
+
+            if self.current_step < len(self.replay_data['steps']) - 1:
+                action_step_data = self.replay_data['steps'][self.current_step + 1]
+                show_actions = True
+            else:
+                action_step_data = None
+                show_actions = False
+
+            return current_step_data, action_step_data, show_actions, None
+
+    def _step_forward(self):
+        """前進一步（如果啟用 sub-steps 則前進一個 sub-step）"""
+        if not self.has_substeps or not self.show_substeps:
+            # 沒有 sub-steps 或關閉 sub-step 顯示：直接前進一個 step
+            self.current_step = min(
+                self.current_step + 1,
+                len(self.replay_data['steps']) - 1
+            )
+            self.current_substep = -1
+        else:
+            # 有 sub-steps：逐個 sub-step 前進
+            if self.current_step == -1:
+                # 從初始狀態進入 step 0
+                self.current_step = 0
+                self.current_substep = -1  # 顯示 step 0 開始前的狀態
+            elif self.current_step < len(self.replay_data['steps']):
+                step_data = self.replay_data['steps'][self.current_step]
+                num_substeps = len(step_data.get('sub_steps', []))
+
+                if self.current_substep < num_substeps - 1:
+                    # 還有更多 sub-steps
+                    self.current_substep += 1
+                else:
+                    # 這個 step 的所有 sub-steps 都看完了，進入下一個 step
+                    if self.current_step < len(self.replay_data['steps']) - 1:
+                        self.current_step += 1
+                        self.current_substep = -1
+
+    def _step_backward(self):
+        """後退一步（如果啟用 sub-steps 則後退一個 sub-step）"""
+        if not self.has_substeps or not self.show_substeps:
+            # 沒有 sub-steps 或關閉 sub-step 顯示：直接後退一個 step
+            if self.current_step == 0:
+                self.current_step = -1
+            else:
+                self.current_step = max(self.current_step - 1, 0)
+            self.current_substep = -1
+        else:
+            # 有 sub-steps：逐個 sub-step 後退
+            if self.current_substep > -1:
+                # 還可以在當前 step 內後退
+                self.current_substep -= 1
+            elif self.current_step > 0:
+                # 回到上一個 step 的最後一個 sub-step
+                self.current_step -= 1
+                step_data = self.replay_data['steps'][self.current_step]
+                num_substeps = len(step_data.get('sub_steps', []))
+                self.current_substep = num_substeps - 1
+            elif self.current_step == 0:
+                # 回到初始狀態
+                self.current_step = -1
+                self.current_substep = -1
 
     def _draw(self):
         """Draw current frame"""
@@ -228,50 +383,29 @@ class ReplayVisualizer:
             label = self.font_small.render("C", True, self.COLORS['charger'])
             self.screen.blit(label, (cx * self.cell_size + 8, cy * self.cell_size + 8))
 
-        # Draw current step
-        # For step -1 (initial state), show initial positions (four corners)
-        # For step N (N >= 0), show positions from step N and actions from step N+1
-        
-        if self.current_step == -1:
-            # Initial state: create synthetic initial data with robots at corners
-            grid_size = config['grid_size']
-            initial_positions = [
-                [0, 0], [grid_size - 1, 0], [0, grid_size - 1], [grid_size - 1, grid_size - 1]
-            ]
-            current_step_data = {
-                'robots': {
-                    f'robot_{i}': {
-                        'position': initial_positions[i],
-                        'energy': config['robot_initial_energies'][f'robot_{i}'],
-                        'is_dead': False
-                    }
-                    for i in range(4)
-                }
-            }
-            # Show step 0 actions (what will happen next)
-            action_step_data = self.replay_data['steps'][0]
-            show_actions = True
-        else:
-            # Normal case: show current step data
-            current_step_data = self.replay_data['steps'][self.current_step]
-            if self.current_step < len(self.replay_data['steps']) - 1:
-                # Show next step's actions
-                action_step_data = self.replay_data['steps'][self.current_step + 1]
-                show_actions = True
-            else:
-                # Last step: no more actions to show
-                show_actions = False
-                action_step_data = None
+        # Draw current step/substep
+        # Get robot positions and determine which actions to show
+        current_step_data, action_step_data, show_actions, current_robot_id = self._get_display_state(config)
 
         # Draw robots
-        for agent_id, robot_state in current_step_data['robots'].items():
+        num_robots = config.get('num_robots', 4)
+        for i in range(num_robots):
+            agent_id = f'robot_{i}'
+            if agent_id not in current_step_data['robots']:
+                continue
+            robot_state = current_step_data['robots'][agent_id]
             if not robot_state['is_dead']:
                 rx, ry = robot_state['position']  # position is [x, y] = [col, row]
-                color = self.robot_colors[agent_id]
+                color = self.robot_colors.get(agent_id, (128, 128, 128))
 
                 # Draw robot circle
                 center_x = rx * self.cell_size + self.cell_size // 2
                 center_y = ry * self.cell_size + self.cell_size // 2
+
+                # 如果是當前行動的 robot，畫一個高亮外框
+                if current_robot_id is not None and agent_id == f'robot_{current_robot_id}':
+                    pygame.draw.circle(self.screen, (255, 255, 0), (center_x, center_y), self.cell_size // 3 + 5, 3)
+
                 pygame.draw.circle(self.screen, color, (center_x, center_y), self.cell_size // 3)
 
                 # Draw robot ID
@@ -279,11 +413,19 @@ class ReplayVisualizer:
                 label = self.font_small.render(robot_num, True, (255, 255, 255))
                 label_rect = label.get_rect(center=(center_x, center_y))
                 self.screen.blit(label, label_rect)
-                
-                # Draw action arrow/indicator (show next action)
-                if show_actions and agent_id in action_step_data['actions']:
-                    action = action_step_data['actions'][agent_id]
-                    self._draw_action_arrow(center_x, center_y, action, color)
+
+                # Draw action arrow/indicator
+                if show_actions and action_step_data:
+                    # 在 sub-step 模式下，只顯示當前 robot 的箭頭
+                    if current_robot_id is not None:
+                        if agent_id == f'robot_{current_robot_id}' and agent_id in action_step_data.get('actions', {}):
+                            action = action_step_data['actions'][agent_id]
+                            self._draw_action_arrow(center_x, center_y, action, color)
+                    else:
+                        # 非 sub-step 模式，顯示所有箭頭
+                        if agent_id in action_step_data.get('actions', {}):
+                            action = action_step_data['actions'][agent_id]
+                            self._draw_action_arrow(center_x, center_y, action, color)
 
         # Draw info panel on the right
         self._draw_info_panel(current_step_data, action_step_data if show_actions else None, config)
@@ -314,13 +456,25 @@ class ReplayVisualizer:
         line_height = 20
         small_line_height = 16
 
-        # Title (show "Initial State" for step -1)
+        # Title (show step and substep info)
         if self.current_step == -1:
             title = self.font_large.render(f"Initial State", True, self.COLORS['text'])
+        elif self.has_substeps and self.show_substeps:
+            if self.current_substep == -1:
+                title = self.font_large.render(f"Step {self.current_step} (before)", True, self.COLORS['text'])
+            else:
+                title = self.font_large.render(f"Step {self.current_step}.{self.current_substep}", True, self.COLORS['text'])
         else:
             title = self.font_large.render(f"Step {self.current_step}", True, self.COLORS['text'])
         self.screen.blit(title, (panel_x, y_offset))
         y_offset += line_height + 5
+
+        # Sub-step mode indicator
+        if self.has_substeps:
+            substep_mode = "ON" if self.show_substeps else "OFF"
+            substep_label = self.font_small.render(f"Sub-steps: {substep_mode} (press S)", True, (100, 100, 100))
+            self.screen.blit(substep_label, (panel_x, y_offset))
+            y_offset += line_height
 
         # Status
         status_text = "PAUSED" if self.is_paused else "PLAYING"

@@ -1,0 +1,456 @@
+{
+  "config": {
+    "grid_size": 3,
+    "num_robots": 2,
+    "charger_positions": [
+      [
+        1,
+        1
+      ]
+    ],
+    "robot_initial_energies": {
+      "robot_0": 500,
+      "robot_1": 100
+    },
+    "parameters": {
+      "e_move": 1,
+      "e_collision": 3,
+      "e_boundary": 50,
+      "e_charge": 5
+    }
+  },
+  "steps": [
+    {
+      "step": 0,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 449,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 49,
+          "is_dead": false
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 1,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 398,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": [
+        {
+          "type": "death",
+          "robot": "robot_1",
+          "cause": "energy_depleted"
+        }
+      ]
+    },
+    {
+      "step": 2,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 347,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 3,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 296,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 4,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 245,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 5,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 194,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 6,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 143,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 7,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 92,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 8,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 41,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 9,
+      "actions": {
+        "robot_0": "UP",
+        "robot_1": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        },
+        "robot_1": {
+          "UP": NaN,
+          "DOWN": NaN,
+          "LEFT": NaN,
+          "RIGHT": NaN,
+          "STAY": NaN
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_1": {
+          "position": [
+            2,
+            0
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": [
+        {
+          "type": "death",
+          "robot": "robot_0",
+          "cause": "energy_depleted"
+        }
+      ]
+    }
+  ]
+}

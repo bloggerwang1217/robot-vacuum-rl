@@ -1,0 +1,3523 @@
+{
+  "config": {
+    "grid_size": 5,
+    "charger_positions": [
+      [
+        2,
+        2
+      ]
+    ],
+    "robot_initial_energies": {
+      "robot_0": 1000,
+      "robot_1": 100,
+      "robot_2": 100,
+      "robot_3": 100
+    },
+    "parameters": {
+      "e_move": 1,
+      "e_collision": 2,
+      "e_boundary": 50,
+      "e_charge": 2
+    }
+  },
+  "steps": [
+    {
+      "step": 0,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "STAY",
+        "robot_2": "RIGHT",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 313.911376953125,
+          "DOWN": 454.09320068359375,
+          "LEFT": 371.4288330078125,
+          "RIGHT": 452.0318603515625,
+          "STAY": 297.0684509277344
+        },
+        "robot_1": {
+          "UP": 169.3060760498047,
+          "DOWN": 379.6913757324219,
+          "LEFT": 365.7747497558594,
+          "RIGHT": 90.10114288330078,
+          "STAY": 423.0478515625
+        },
+        "robot_2": {
+          "UP": 146.67567443847656,
+          "DOWN": 61.36839294433594,
+          "LEFT": 66.97217559814453,
+          "RIGHT": 176.14178466796875,
+          "STAY": 105.45716094970703
+        },
+        "robot_3": {
+          "UP": 256.88336181640625,
+          "DOWN": 236.77427673339844,
+          "LEFT": 410.4402160644531,
+          "RIGHT": 155.79595947265625,
+          "STAY": 350.6138610839844
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            1
+          ],
+          "energy": 999,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            4,
+            0
+          ],
+          "energy": 99,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            4
+          ],
+          "energy": 99,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            3,
+            4
+          ],
+          "energy": 99,
+          "is_dead": false
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 1,
+      "actions": {
+        "robot_0": "RIGHT",
+        "robot_1": "DOWN",
+        "robot_2": "UP",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 287.7370910644531,
+          "DOWN": 390.5977783203125,
+          "LEFT": 326.3087463378906,
+          "RIGHT": 440.428955078125,
+          "STAY": 253.63818359375
+        },
+        "robot_1": {
+          "UP": 454.94329833984375,
+          "DOWN": 648.647216796875,
+          "LEFT": 641.4408569335938,
+          "RIGHT": 396.7474670410156,
+          "STAY": 648.3795776367188
+        },
+        "robot_2": {
+          "UP": 646.2032470703125,
+          "DOWN": 538.9667358398438,
+          "LEFT": 517.2780151367188,
+          "RIGHT": 582.9246215820312,
+          "STAY": 439.2828063964844
+        },
+        "robot_3": {
+          "UP": 738.2450561523438,
+          "DOWN": 662.9093017578125,
+          "LEFT": 730.5478515625,
+          "RIGHT": 612.35986328125,
+          "STAY": 539.8452758789062
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            1,
+            1
+          ],
+          "energy": 998,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            4,
+            1
+          ],
+          "energy": 98,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            3
+          ],
+          "energy": 98,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            3,
+            3
+          ],
+          "energy": 98,
+          "is_dead": false
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 2,
+      "actions": {
+        "robot_0": "RIGHT",
+        "robot_1": "LEFT",
+        "robot_2": "UP",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 245.77906799316406,
+          "DOWN": 370.2342834472656,
+          "LEFT": 291.5692443847656,
+          "RIGHT": 378.7631530761719,
+          "STAY": 213.44683837890625
+        },
+        "robot_1": {
+          "UP": 639.2655639648438,
+          "DOWN": 745.5299072265625,
+          "LEFT": 765.6314086914062,
+          "RIGHT": 578.8785400390625,
+          "STAY": 642.6989135742188
+        },
+        "robot_2": {
+          "UP": 628.531982421875,
+          "DOWN": 531.7058715820312,
+          "LEFT": 490.8756103515625,
+          "RIGHT": 605.6954345703125,
+          "STAY": 360.7424011230469
+        },
+        "robot_3": {
+          "UP": 746.7393798828125,
+          "DOWN": 704.4832153320312,
+          "LEFT": 756.9971923828125,
+          "RIGHT": 638.6419677734375,
+          "STAY": 543.8291015625
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 997,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            1
+          ],
+          "energy": 97,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 97,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 97,
+          "is_dead": false
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 3,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "DOWN",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 292.3453674316406,
+          "DOWN": 436.79132080078125,
+          "LEFT": 365.9341735839844,
+          "RIGHT": 367.8787841796875,
+          "STAY": 289.97821044921875
+        },
+        "robot_1": {
+          "UP": 629.0086059570312,
+          "DOWN": 717.400146484375,
+          "LEFT": 709.4921875,
+          "RIGHT": 609.180908203125,
+          "STAY": 570.9714965820312
+        },
+        "robot_2": {
+          "UP": 768.4298706054688,
+          "DOWN": 746.4880981445312,
+          "LEFT": 726.5305786132812,
+          "RIGHT": 830.5484619140625,
+          "STAY": 636.3262939453125
+        },
+        "robot_3": {
+          "UP": 726.9849243164062,
+          "DOWN": 686.1231689453125,
+          "LEFT": 699.6824951171875,
+          "RIGHT": 663.4177856445312,
+          "STAY": 537.1286010742188
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 994,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 96,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 94,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 94,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_2",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 4,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 277.57159423828125,
+          "DOWN": 424.31402587890625,
+          "LEFT": 350.8179931640625,
+          "RIGHT": 350.5176696777344,
+          "STAY": 268.3901062011719
+        },
+        "robot_1": {
+          "UP": 757.3428344726562,
+          "DOWN": 784.3170166015625,
+          "LEFT": 804.8710327148438,
+          "RIGHT": 696.8223266601562,
+          "STAY": 652.9922485351562
+        },
+        "robot_2": {
+          "UP": 758.8644409179688,
+          "DOWN": 742.8758544921875,
+          "LEFT": 723.6686401367188,
+          "RIGHT": 821.438720703125,
+          "STAY": 633.932861328125
+        },
+        "robot_3": {
+          "UP": 708.84814453125,
+          "DOWN": 672.837646484375,
+          "LEFT": 685.876220703125,
+          "RIGHT": 644.64208984375,
+          "STAY": 525.149169921875
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 991,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 93,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 91,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 91,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 5,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 274.840087890625,
+          "DOWN": 420.23370361328125,
+          "LEFT": 347.1549987792969,
+          "RIGHT": 346.31689453125,
+          "STAY": 264.34588623046875
+        },
+        "robot_1": {
+          "UP": 749.0596923828125,
+          "DOWN": 773.2901611328125,
+          "LEFT": 795.216552734375,
+          "RIGHT": 688.2485961914062,
+          "STAY": 640.7388305664062
+        },
+        "robot_2": {
+          "UP": 751.3783569335938,
+          "DOWN": 735.1995239257812,
+          "LEFT": 717.101806640625,
+          "RIGHT": 813.373779296875,
+          "STAY": 626.4308471679688
+        },
+        "robot_3": {
+          "UP": 702.8989868164062,
+          "DOWN": 663.92333984375,
+          "LEFT": 676.2164306640625,
+          "RIGHT": 634.9133911132812,
+          "STAY": 513.3599853515625
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 988,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 90,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 88,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 88,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 6,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 272.6239013671875,
+          "DOWN": 416.412353515625,
+          "LEFT": 343.8540344238281,
+          "RIGHT": 342.7657775878906,
+          "STAY": 261.0264892578125
+        },
+        "robot_1": {
+          "UP": 740.2327880859375,
+          "DOWN": 761.3421020507812,
+          "LEFT": 784.6173095703125,
+          "RIGHT": 679.9517211914062,
+          "STAY": 627.3507690429688
+        },
+        "robot_2": {
+          "UP": 746.063232421875,
+          "DOWN": 729.5416870117188,
+          "LEFT": 712.8993530273438,
+          "RIGHT": 807.8499755859375,
+          "STAY": 621.1944580078125
+        },
+        "robot_3": {
+          "UP": 699.2608032226562,
+          "DOWN": 657.0223388671875,
+          "LEFT": 669.2523803710938,
+          "RIGHT": 627.936279296875,
+          "STAY": 504.595703125
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 985,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 87,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 85,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 85,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 7,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 272.8356018066406,
+          "DOWN": 414.7326965332031,
+          "LEFT": 342.8916931152344,
+          "RIGHT": 341.4010314941406,
+          "STAY": 260.16607666015625
+        },
+        "robot_1": {
+          "UP": 735.010986328125,
+          "DOWN": 752.6929321289062,
+          "LEFT": 777.634521484375,
+          "RIGHT": 675.551025390625,
+          "STAY": 617.8334350585938
+        },
+        "robot_2": {
+          "UP": 742.7362670898438,
+          "DOWN": 725.7598876953125,
+          "LEFT": 710.810791015625,
+          "RIGHT": 804.5862426757812,
+          "STAY": 618.2219848632812
+        },
+        "robot_3": {
+          "UP": 698.8403930664062,
+          "DOWN": 653.214111328125,
+          "LEFT": 666.2212524414062,
+          "RIGHT": 624.9451293945312,
+          "STAY": 501.0950012207031
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 982,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 84,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 82,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 82,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 8,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 273.6856689453125,
+          "DOWN": 413.4923400878906,
+          "LEFT": 342.4403076171875,
+          "RIGHT": 340.71160888671875,
+          "STAY": 260.83929443359375
+        },
+        "robot_1": {
+          "UP": 733.4806518554688,
+          "DOWN": 747.2535400390625,
+          "LEFT": 774.4060668945312,
+          "RIGHT": 674.9183349609375,
+          "STAY": 611.8554077148438
+        },
+        "robot_2": {
+          "UP": 740.4169921875,
+          "DOWN": 722.9576416015625,
+          "LEFT": 709.7503051757812,
+          "RIGHT": 802.5455322265625,
+          "STAY": 616.4553833007812
+        },
+        "robot_3": {
+          "UP": 701.5687255859375,
+          "DOWN": 652.394775390625,
+          "LEFT": 666.3919677734375,
+          "RIGHT": 625.322998046875,
+          "STAY": 501.3072509765625
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 979,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 81,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 79,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 79,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 9,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 276.3294677734375,
+          "DOWN": 414.2430114746094,
+          "LEFT": 343.9468688964844,
+          "RIGHT": 341.979248046875,
+          "STAY": 263.9148864746094
+        },
+        "robot_1": {
+          "UP": 733.3740234375,
+          "DOWN": 743.1979370117188,
+          "LEFT": 772.839111328125,
+          "RIGHT": 675.7960205078125,
+          "STAY": 607.368408203125
+        },
+        "robot_2": {
+          "UP": 738.1250610351562,
+          "DOWN": 720.1837158203125,
+          "LEFT": 708.719970703125,
+          "RIGHT": 800.53466796875,
+          "STAY": 614.71875
+        },
+        "robot_3": {
+          "UP": 709.5480346679688,
+          "DOWN": 657.217041015625,
+          "LEFT": 671.5863037109375,
+          "RIGHT": 630.943115234375,
+          "STAY": 507.2696228027344
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 976,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 78,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 76,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 76,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 10,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 278.30615234375,
+          "DOWN": 414.31060791015625,
+          "LEFT": 344.7527770996094,
+          "RIGHT": 342.59991455078125,
+          "STAY": 266.1938171386719
+        },
+        "robot_1": {
+          "UP": 733.5549926757812,
+          "DOWN": 739.417724609375,
+          "LEFT": 771.8549194335938,
+          "RIGHT": 677.1107788085938,
+          "STAY": 604.3165893554688
+        },
+        "robot_2": {
+          "UP": 735.9861450195312,
+          "DOWN": 717.5499877929688,
+          "LEFT": 707.8458251953125,
+          "RIGHT": 798.6633911132812,
+          "STAY": 613.1201782226562
+        },
+        "robot_3": {
+          "UP": 714.3162231445312,
+          "DOWN": 658.7587890625,
+          "LEFT": 673.7769775390625,
+          "RIGHT": 633.8421630859375,
+          "STAY": 509.449462890625
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 973,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 75,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 73,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 73,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 11,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 281.025146484375,
+          "DOWN": 415.1004333496094,
+          "LEFT": 346.2738342285156,
+          "RIGHT": 343.98828125,
+          "STAY": 269.36614990234375
+        },
+        "robot_1": {
+          "UP": 733.8477783203125,
+          "DOWN": 736.145263671875,
+          "LEFT": 770.91064453125,
+          "RIGHT": 679.4097900390625,
+          "STAY": 603.3504028320312
+        },
+        "robot_2": {
+          "UP": 736.4640502929688,
+          "DOWN": 717.6614379882812,
+          "LEFT": 710.0437622070312,
+          "RIGHT": 799.697509765625,
+          "STAY": 614.7322387695312
+        },
+        "robot_3": {
+          "UP": 718.1610717773438,
+          "DOWN": 659.4234619140625,
+          "LEFT": 675.9849853515625,
+          "RIGHT": 636.3841552734375,
+          "STAY": 511.5605773925781
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 970,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 72,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 70,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 70,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 12,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 284.17706298828125,
+          "DOWN": 416.2728271484375,
+          "LEFT": 348.2221984863281,
+          "RIGHT": 345.8084716796875,
+          "STAY": 273.0271911621094
+        },
+        "robot_1": {
+          "UP": 737.3648071289062,
+          "DOWN": 736.3775024414062,
+          "LEFT": 773.5054321289062,
+          "RIGHT": 685.6322631835938,
+          "STAY": 606.6007690429688
+        },
+        "robot_2": {
+          "UP": 739.1715698242188,
+          "DOWN": 720.1126098632812,
+          "LEFT": 714.8816528320312,
+          "RIGHT": 803.25146484375,
+          "STAY": 619.0978393554688
+        },
+        "robot_3": {
+          "UP": 720.6351318359375,
+          "DOWN": 659.1546630859375,
+          "LEFT": 676.9221801757812,
+          "RIGHT": 638.0900268554688,
+          "STAY": 512.6296997070312
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 967,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 69,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 67,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 67,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 13,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 288.23504638671875,
+          "DOWN": 418.3399353027344,
+          "LEFT": 351.0392150878906,
+          "RIGHT": 348.5281066894531,
+          "STAY": 277.6423034667969
+        },
+        "robot_1": {
+          "UP": 739.6337280273438,
+          "DOWN": 735.7587890625,
+          "LEFT": 775.2673950195312,
+          "RIGHT": 690.1874389648438,
+          "STAY": 609.2981567382812
+        },
+        "robot_2": {
+          "UP": 741.8959350585938,
+          "DOWN": 722.4425659179688,
+          "LEFT": 719.7496948242188,
+          "RIGHT": 806.70361328125,
+          "STAY": 623.4226684570312
+        },
+        "robot_3": {
+          "UP": 724.177001953125,
+          "DOWN": 660.2262573242188,
+          "LEFT": 678.3907470703125,
+          "RIGHT": 641.5183715820312,
+          "STAY": 515.2760620117188
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 964,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 66,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 64,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 64,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 14,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 292.54278564453125,
+          "DOWN": 420.67010498046875,
+          "LEFT": 354.0699157714844,
+          "RIGHT": 351.4154968261719,
+          "STAY": 282.4622497558594
+        },
+        "robot_1": {
+          "UP": 740.9879760742188,
+          "DOWN": 734.4968872070312,
+          "LEFT": 776.2006225585938,
+          "RIGHT": 693.6427001953125,
+          "STAY": 612.1728515625
+        },
+        "robot_2": {
+          "UP": 745.1946411132812,
+          "DOWN": 725.3786010742188,
+          "LEFT": 725.3663330078125,
+          "RIGHT": 810.7318115234375,
+          "STAY": 628.4647827148438
+        },
+        "robot_3": {
+          "UP": 725.6450805664062,
+          "DOWN": 658.9527587890625,
+          "LEFT": 677.2234497070312,
+          "RIGHT": 642.4437866210938,
+          "STAY": 515.2269897460938
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 961,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 63,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 61,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 61,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 15,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 295.5689697265625,
+          "DOWN": 421.7749938964844,
+          "LEFT": 355.7860412597656,
+          "RIGHT": 352.811279296875,
+          "STAY": 285.78009033203125
+        },
+        "robot_1": {
+          "UP": 743.0559692382812,
+          "DOWN": 733.9295043945312,
+          "LEFT": 777.7951049804688,
+          "RIGHT": 697.8621215820312,
+          "STAY": 615.9325561523438
+        },
+        "robot_2": {
+          "UP": 748.1018676757812,
+          "DOWN": 727.8851928710938,
+          "LEFT": 730.6040649414062,
+          "RIGHT": 814.1986083984375,
+          "STAY": 633.0855102539062
+        },
+        "robot_3": {
+          "UP": 732.3218994140625,
+          "DOWN": 662.5071411132812,
+          "LEFT": 681.3258056640625,
+          "RIGHT": 648.397216796875,
+          "STAY": 520.538330078125
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 958,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 60,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 58,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 58,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 16,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 298.5909423828125,
+          "DOWN": 422.87469482421875,
+          "LEFT": 357.4956970214844,
+          "RIGHT": 354.20916748046875,
+          "STAY": 289.0998840332031
+        },
+        "robot_1": {
+          "UP": 745.6718139648438,
+          "DOWN": 733.8966064453125,
+          "LEFT": 779.9610595703125,
+          "RIGHT": 702.6158447265625,
+          "STAY": 620.2392578125
+        },
+        "robot_2": {
+          "UP": 748.9265747070312,
+          "DOWN": 728.1729125976562,
+          "LEFT": 733.4389038085938,
+          "RIGHT": 815.1395263671875,
+          "STAY": 635.0231323242188
+        },
+        "robot_3": {
+          "UP": 741.9306640625,
+          "DOWN": 668.874755859375,
+          "LEFT": 688.62255859375,
+          "RIGHT": 657.308349609375,
+          "STAY": 529.2972412109375
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 955,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 57,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 55,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 55,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 17,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 301.2086486816406,
+          "DOWN": 423.46856689453125,
+          "LEFT": 358.5731506347656,
+          "RIGHT": 355.8171691894531,
+          "STAY": 292.6273193359375
+        },
+        "robot_1": {
+          "UP": 748.8809204101562,
+          "DOWN": 734.44970703125,
+          "LEFT": 782.7791137695312,
+          "RIGHT": 707.9802856445312,
+          "STAY": 625.23046875
+        },
+        "robot_2": {
+          "UP": 749.6940307617188,
+          "DOWN": 728.2099609375,
+          "LEFT": 736.1986083984375,
+          "RIGHT": 815.9882202148438,
+          "STAY": 636.7050170898438
+        },
+        "robot_3": {
+          "UP": 753.9830932617188,
+          "DOWN": 677.5731201171875,
+          "LEFT": 698.5863037109375,
+          "RIGHT": 668.762939453125,
+          "STAY": 541.0781860351562
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 952,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 54,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 52,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 52,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 18,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 305.3179626464844,
+          "DOWN": 425.3647155761719,
+          "LEFT": 361.0967712402344,
+          "RIGHT": 358.79229736328125,
+          "STAY": 297.9098815917969
+        },
+        "robot_1": {
+          "UP": 752.6519165039062,
+          "DOWN": 735.5499267578125,
+          "LEFT": 786.2526245117188,
+          "RIGHT": 714.007568359375,
+          "STAY": 631.03466796875
+        },
+        "robot_2": {
+          "UP": 753.0477905273438,
+          "DOWN": 730.8171997070312,
+          "LEFT": 741.9769287109375,
+          "RIGHT": 819.7112426757812,
+          "STAY": 641.4400634765625
+        },
+        "robot_3": {
+          "UP": 765.2886352539062,
+          "DOWN": 685.5076293945312,
+          "LEFT": 707.8736572265625,
+          "RIGHT": 679.7515258789062,
+          "STAY": 551.95703125
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 949,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 51,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 49,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 49,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 19,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 311.0732421875,
+          "DOWN": 428.72381591796875,
+          "LEFT": 365.206787109375,
+          "RIGHT": 363.370849609375,
+          "STAY": 305.094482421875
+        },
+        "robot_1": {
+          "UP": 757.6074829101562,
+          "DOWN": 737.81005859375,
+          "LEFT": 791.00537109375,
+          "RIGHT": 721.4581298828125,
+          "STAY": 638.2720336914062
+        },
+        "robot_2": {
+          "UP": 758.3353881835938,
+          "DOWN": 735.5195922851562,
+          "LEFT": 750.0094604492188,
+          "RIGHT": 825.6851806640625,
+          "STAY": 648.5624389648438
+        },
+        "robot_3": {
+          "UP": 765.654541015625,
+          "DOWN": 682.6180419921875,
+          "LEFT": 705.5475463867188,
+          "RIGHT": 680.0440063476562,
+          "STAY": 552.2407836914062
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 946,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 48,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 46,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 46,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 20,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 317.967529296875,
+          "DOWN": 433.19146728515625,
+          "LEFT": 370.4181823730469,
+          "RIGHT": 369.23193359375,
+          "STAY": 313.519287109375
+        },
+        "robot_1": {
+          "UP": 768.5862426757812,
+          "DOWN": 746.0628051757812,
+          "LEFT": 802.147216796875,
+          "RIGHT": 735.1355590820312,
+          "STAY": 651.6831665039062
+        },
+        "robot_2": {
+          "UP": 765.5787963867188,
+          "DOWN": 742.34912109375,
+          "LEFT": 760.2818603515625,
+          "RIGHT": 833.9276123046875,
+          "STAY": 658.0427856445312
+        },
+        "robot_3": {
+          "UP": 765.9730834960938,
+          "DOWN": 680.7730102539062,
+          "LEFT": 704.2747802734375,
+          "RIGHT": 681.1647338867188,
+          "STAY": 554.3180541992188
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 943,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 45,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 43,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 43,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 21,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 328.2991943359375,
+          "DOWN": 441.0888671875,
+          "LEFT": 379.05987548828125,
+          "RIGHT": 378.8161926269531,
+          "STAY": 325.75592041015625
+        },
+        "robot_1": {
+          "UP": 775.5625,
+          "DOWN": 750.46240234375,
+          "LEFT": 809.0452880859375,
+          "RIGHT": 744.6842041015625,
+          "STAY": 660.7086791992188
+        },
+        "robot_2": {
+          "UP": 773.4075317382812,
+          "DOWN": 749.7457885742188,
+          "LEFT": 771.1834716796875,
+          "RIGHT": 842.6588745117188,
+          "STAY": 668.2162475585938
+        },
+        "robot_3": {
+          "UP": 764.086181640625,
+          "DOWN": 678.3590087890625,
+          "LEFT": 702.45947265625,
+          "RIGHT": 681.5531616210938,
+          "STAY": 556.6284790039062
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 940,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 42,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 40,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 40,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 22,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 338.6024169921875,
+          "DOWN": 448.90869140625,
+          "LEFT": 387.6003112792969,
+          "RIGHT": 388.2727355957031,
+          "STAY": 337.8604431152344
+        },
+        "robot_1": {
+          "UP": 781.5033569335938,
+          "DOWN": 754.1918334960938,
+          "LEFT": 814.8333740234375,
+          "RIGHT": 753.5114135742188,
+          "STAY": 669.05615234375
+        },
+        "robot_2": {
+          "UP": 779.5491943359375,
+          "DOWN": 755.4500122070312,
+          "LEFT": 780.08349609375,
+          "RIGHT": 850.0771484375,
+          "STAY": 676.7994384765625
+        },
+        "robot_3": {
+          "UP": 761.7748413085938,
+          "DOWN": 675.7847900390625,
+          "LEFT": 700.443359375,
+          "RIGHT": 682.0951538085938,
+          "STAY": 559.2740478515625
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 937,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 39,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 37,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 37,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 23,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 351.6527099609375,
+          "DOWN": 459.3580017089844,
+          "LEFT": 398.7417907714844,
+          "RIGHT": 400.4393005371094,
+          "STAY": 352.71990966796875
+        },
+        "robot_1": {
+          "UP": 777.34765625,
+          "DOWN": 748.1245727539062,
+          "LEFT": 810.1294555664062,
+          "RIGHT": 751.904296875,
+          "STAY": 666.7108764648438
+        },
+        "robot_2": {
+          "UP": 782.1901245117188,
+          "DOWN": 757.6277465820312,
+          "LEFT": 784.88232421875,
+          "RIGHT": 854.2183837890625,
+          "STAY": 681.05615234375
+        },
+        "robot_3": {
+          "UP": 759.4633178710938,
+          "DOWN": 673.2103271484375,
+          "LEFT": 698.427001953125,
+          "RIGHT": 682.636962890625,
+          "STAY": 561.9193725585938
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 934,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 36,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 34,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 34,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 24,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 366.3662109375,
+          "DOWN": 471.2492370605469,
+          "LEFT": 411.4156799316406,
+          "RIGHT": 414.1020812988281,
+          "STAY": 369.4022521972656
+        },
+        "robot_1": {
+          "UP": 771.8260498046875,
+          "DOWN": 740.6573486328125,
+          "LEFT": 803.944091796875,
+          "RIGHT": 748.7366943359375,
+          "STAY": 662.6910400390625
+        },
+        "robot_2": {
+          "UP": 783.2941284179688,
+          "DOWN": 758.2368774414062,
+          "LEFT": 787.97607421875,
+          "RIGHT": 856.7606811523438,
+          "STAY": 683.2904663085938
+        },
+        "robot_3": {
+          "UP": 755.7579956054688,
+          "DOWN": 669.2500610351562,
+          "LEFT": 695.38818359375,
+          "RIGHT": 681.7366943359375,
+          "STAY": 562.8416748046875
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 931,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 33,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 31,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 31,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 25,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 381.11163330078125,
+          "DOWN": 483.1203918457031,
+          "LEFT": 424.1206359863281,
+          "RIGHT": 427.71875,
+          "STAY": 386.173828125
+        },
+        "robot_1": {
+          "UP": 768.3236694335938,
+          "DOWN": 735.3215942382812,
+          "LEFT": 799.7098999023438,
+          "RIGHT": 747.4966430664062,
+          "STAY": 660.3701171875
+        },
+        "robot_2": {
+          "UP": 783.3234252929688,
+          "DOWN": 757.6323852539062,
+          "LEFT": 789.7686767578125,
+          "RIGHT": 858.087890625,
+          "STAY": 684.1088256835938
+        },
+        "robot_3": {
+          "UP": 750.0658569335938,
+          "DOWN": 663.3529663085938,
+          "LEFT": 690.9848022460938,
+          "RIGHT": 678.7607421875,
+          "STAY": 561.1039428710938
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 928,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 30,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 28,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 28,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 26,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 393.920166015625,
+          "DOWN": 493.040283203125,
+          "LEFT": 435.10601806640625,
+          "RIGHT": 439.26507568359375,
+          "STAY": 400.53125
+        },
+        "robot_1": {
+          "UP": 764.6430053710938,
+          "DOWN": 729.9346923828125,
+          "LEFT": 795.317626953125,
+          "RIGHT": 746.1612548828125,
+          "STAY": 658.0547485351562
+        },
+        "robot_2": {
+          "UP": 783.3988647460938,
+          "DOWN": 757.0874633789062,
+          "LEFT": 791.6578369140625,
+          "RIGHT": 859.3399047851562,
+          "STAY": 684.9452514648438
+        },
+        "robot_3": {
+          "UP": 741.043701171875,
+          "DOWN": 654.3895874023438,
+          "LEFT": 683.5364379882812,
+          "RIGHT": 672.789306640625,
+          "STAY": 556.3270874023438
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 925,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 27,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 25,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 25,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 27,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 405.70928955078125,
+          "DOWN": 501.9361267089844,
+          "LEFT": 445.11981201171875,
+          "RIGHT": 449.7110900878906,
+          "STAY": 413.6090087890625
+        },
+        "robot_1": {
+          "UP": 759.5750122070312,
+          "DOWN": 723.1089477539062,
+          "LEFT": 789.388427734375,
+          "RIGHT": 743.1461791992188,
+          "STAY": 653.6359252929688
+        },
+        "robot_2": {
+          "UP": 780.616455078125,
+          "DOWN": 753.3656616210938,
+          "LEFT": 790.2076416015625,
+          "RIGHT": 857.1209716796875,
+          "STAY": 682.2918090820312
+        },
+        "robot_3": {
+          "UP": 728.7889404296875,
+          "DOWN": 642.3443603515625,
+          "LEFT": 673.2273559570312,
+          "RIGHT": 663.7915649414062,
+          "STAY": 548.234375
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 922,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 24,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 22,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 22,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 28,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 417.5793762207031,
+          "DOWN": 510.92938232421875,
+          "LEFT": 455.2110900878906,
+          "RIGHT": 460.243896484375,
+          "STAY": 426.7191162109375
+        },
+        "robot_1": {
+          "UP": 753.8713989257812,
+          "DOWN": 715.690185546875,
+          "LEFT": 782.8012084960938,
+          "RIGHT": 739.3121948242188,
+          "STAY": 648.2540893554688
+        },
+        "robot_2": {
+          "UP": 781.1826782226562,
+          "DOWN": 753.2799682617188,
+          "LEFT": 792.6500244140625,
+          "RIGHT": 858.6918334960938,
+          "STAY": 683.8461303710938
+        },
+        "robot_3": {
+          "UP": 714.977294921875,
+          "DOWN": 628.89306640625,
+          "LEFT": 661.4586181640625,
+          "RIGHT": 653.2299194335938,
+          "STAY": 538.6094360351562
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 919,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 21,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 19,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 19,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 29,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 430.19512939453125,
+          "DOWN": 520.5765991210938,
+          "LEFT": 465.944580078125,
+          "RIGHT": 471.6017150878906,
+          "STAY": 440.3599853515625
+        },
+        "robot_1": {
+          "UP": 749.2587280273438,
+          "DOWN": 709.3294677734375,
+          "LEFT": 777.3054809570312,
+          "RIGHT": 736.6224975585938,
+          "STAY": 643.9866333007812
+        },
+        "robot_2": {
+          "UP": 779.3912963867188,
+          "DOWN": 750.5228271484375,
+          "LEFT": 792.4241943359375,
+          "RIGHT": 857.6566162109375,
+          "STAY": 682.5498657226562
+        },
+        "robot_3": {
+          "UP": 700.2224731445312,
+          "DOWN": 615.3409423828125,
+          "LEFT": 649.2546997070312,
+          "RIGHT": 642.2529296875,
+          "STAY": 529.4961547851562
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 916,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 18,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 16,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 16,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 30,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 436.74090576171875,
+          "DOWN": 523.8548583984375,
+          "LEFT": 470.1890869140625,
+          "RIGHT": 476.77032470703125,
+          "STAY": 445.9340515136719
+        },
+        "robot_1": {
+          "UP": 743.2846069335938,
+          "DOWN": 701.6923217773438,
+          "LEFT": 770.4659423828125,
+          "RIGHT": 732.7092895507812,
+          "STAY": 638.5072631835938
+        },
+        "robot_2": {
+          "UP": 758.0604858398438,
+          "DOWN": 726.2305297851562,
+          "LEFT": 770.5455322265625,
+          "RIGHT": 835.6005249023438,
+          "STAY": 658.0353393554688
+        },
+        "robot_3": {
+          "UP": 684.1129150390625,
+          "DOWN": 600.8126831054688,
+          "LEFT": 636.23876953125,
+          "RIGHT": 630.0308837890625,
+          "STAY": 519.597900390625
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 913,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 15,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 13,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 13,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 31,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 442.6106872558594,
+          "DOWN": 526.4603271484375,
+          "LEFT": 473.578125,
+          "RIGHT": 481.26422119140625,
+          "STAY": 450.287353515625
+        },
+        "robot_1": {
+          "UP": 737.0504760742188,
+          "DOWN": 693.6641845703125,
+          "LEFT": 763.2374267578125,
+          "RIGHT": 728.4409790039062,
+          "STAY": 632.6378784179688
+        },
+        "robot_2": {
+          "UP": 737.9186401367188,
+          "DOWN": 704.0166015625,
+          "LEFT": 750.718017578125,
+          "RIGHT": 815.2020263671875,
+          "STAY": 635.8439331054688
+        },
+        "robot_3": {
+          "UP": 667.8455810546875,
+          "DOWN": 586.2444458007812,
+          "LEFT": 623.2166137695312,
+          "RIGHT": 617.7191162109375,
+          "STAY": 509.62469482421875
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 910,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 12,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 10,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 10,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 32,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 445.21563720703125,
+          "DOWN": 525.745849609375,
+          "LEFT": 473.74261474609375,
+          "RIGHT": 482.28424072265625,
+          "STAY": 449.8292236328125
+        },
+        "robot_1": {
+          "UP": 719.7572021484375,
+          "DOWN": 674.6075439453125,
+          "LEFT": 744.5574951171875,
+          "RIGHT": 712.7622680664062,
+          "STAY": 615.111328125
+        },
+        "robot_2": {
+          "UP": 705.1739501953125,
+          "DOWN": 668.5831909179688,
+          "LEFT": 717.1431274414062,
+          "RIGHT": 780.7342529296875,
+          "STAY": 598.2010498046875
+        },
+        "robot_3": {
+          "UP": 643.0042724609375,
+          "DOWN": 563.6497192382812,
+          "LEFT": 602.830810546875,
+          "RIGHT": 598.195556640625,
+          "STAY": 493.02392578125
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 907,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 9,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 7,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 7,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 33,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 442.71240234375,
+          "DOWN": 519.8544921875,
+          "LEFT": 469.01702880859375,
+          "RIGHT": 477.8056640625,
+          "STAY": 442.88421630859375
+        },
+        "robot_1": {
+          "UP": 689.7137451171875,
+          "DOWN": 643.7070922851562,
+          "LEFT": 712.6797485351562,
+          "RIGHT": 683.9622192382812,
+          "STAY": 587.0300903320312
+        },
+        "robot_2": {
+          "UP": 639.2512817382812,
+          "DOWN": 598.4115600585938,
+          "LEFT": 647.6026611328125,
+          "RIGHT": 709.7652587890625,
+          "STAY": 521.7113647460938
+        },
+        "robot_3": {
+          "UP": 566.5011596679688,
+          "DOWN": 493.8193359375,
+          "LEFT": 532.689697265625,
+          "RIGHT": 528.8856201171875,
+          "STAY": 434.45343017578125
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 904,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 6,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 4,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 4,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 34,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 438.2708435058594,
+          "DOWN": 513.216552734375,
+          "LEFT": 462.7924499511719,
+          "RIGHT": 471.347412109375,
+          "STAY": 433.96868896484375
+        },
+        "robot_1": {
+          "UP": 591.6443481445312,
+          "DOWN": 547.93408203125,
+          "LEFT": 609.3404541015625,
+          "RIGHT": 584.7482299804688,
+          "STAY": 496.05535888671875
+        },
+        "robot_2": {
+          "UP": 548.0087890625,
+          "DOWN": 505.5964050292969,
+          "LEFT": 553.99609375,
+          "RIGHT": 611.192138671875,
+          "STAY": 422.7496643066406
+        },
+        "robot_3": {
+          "UP": 349.28643798828125,
+          "DOWN": 299.4335021972656,
+          "LEFT": 327.5478515625,
+          "RIGHT": 322.4643859863281,
+          "STAY": 262.50787353515625
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 901,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 3,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 1,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 1,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        }
+      ]
+    },
+    {
+      "step": 35,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 432.98480224609375,
+          "DOWN": 506.754638671875,
+          "LEFT": 456.2535095214844,
+          "RIGHT": 464.4403076171875,
+          "STAY": 424.903564453125
+        },
+        "robot_1": {
+          "UP": 343.11273193359375,
+          "DOWN": 313.4673767089844,
+          "LEFT": 349.8009338378906,
+          "RIGHT": 334.0360107421875,
+          "STAY": 275.09869384765625
+        },
+        "robot_2": {
+          "UP": 203.41490173339844,
+          "DOWN": 182.6134796142578,
+          "LEFT": 211.03887939453125,
+          "RIGHT": 232.75482177734375,
+          "STAY": 134.18618774414062
+        },
+        "robot_3": {
+          "UP": 105.05996704101562,
+          "DOWN": 83.77762603759766,
+          "LEFT": 93.33786010742188,
+          "RIGHT": 85.6046371459961,
+          "STAY": 58.40978240966797
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 898,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            2
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_2",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_3",
+          "victim": "robot_0",
+          "damage": 2
+        },
+        {
+          "type": "death",
+          "robot": "robot_1",
+          "cause": "energy_depleted"
+        },
+        {
+          "type": "death",
+          "robot": "robot_2",
+          "cause": "energy_depleted"
+        },
+        {
+          "type": "death",
+          "robot": "robot_3",
+          "cause": "energy_depleted"
+        }
+      ]
+    }
+  ]
+}

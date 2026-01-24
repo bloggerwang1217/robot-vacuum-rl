@@ -46,13 +46,17 @@ class ModelEvaluator:
             self.device = torch.device("cpu")
         print(f"Using device: {self.device}")
 
-        # Prepare individual robot energies
-        robot_energies = [
+        # Number of robots
+        self.num_robots = args.num_robots
+
+        # Prepare individual robot energies (only for the robots that exist)
+        all_robot_energies = [
             args.robot_0_energy if args.robot_0_energy is not None else args.initial_energy,
             args.robot_1_energy if args.robot_1_energy is not None else args.initial_energy,
             args.robot_2_energy if args.robot_2_energy is not None else args.initial_energy,
             args.robot_3_energy if args.robot_3_energy is not None else args.initial_energy,
         ]
+        robot_energies = all_robot_energies[:self.num_robots]
         self.robot_energies = robot_energies
 
         # Parse charger positions if provided
@@ -74,6 +78,7 @@ class ModelEvaluator:
         render_mode = "human" if args.render else None
         self.env = RobotVacuumGymEnv(
             n=args.env_n,
+            num_robots=self.num_robots,
             initial_energy=args.initial_energy,
             robot_energies=robot_energies,
             e_move=args.e_move,
@@ -85,8 +90,8 @@ class ModelEvaluator:
             charger_positions=charger_positions
         )
 
-        # Initialize agents
-        self.agent_ids = ['robot_0', 'robot_1', 'robot_2', 'robot_3']
+        # Initialize agents (only for the robots that exist)
+        self.agent_ids = [f'robot_{i}' for i in range(self.num_robots)]
         self.agents = {}
 
         observation_dim = self.env.observation_space.shape[0]  # Get actual observation dim from env
@@ -137,13 +142,13 @@ class ModelEvaluator:
 
     def evaluate(self) -> Dict[str, float]:
         """
-        Run single long-term evaluation episode
+        Run single long-term evaluation episode (sequential actions: one robot moves at a time)
 
         Returns:
             Evaluation statistics
         """
         print(f"\n{'=' * 60}")
-        print(f"Starting Long-Term Simulation")
+        print(f"Starting Long-Term Simulation (Sequential Mode)")
         print(f"Max Steps: {self.args.max_steps}")
         print(f"Robot Energies: {self.robot_energies}")
         print(f"Eval Epsilon: {self.args.eval_epsilon}")
@@ -157,80 +162,144 @@ class ModelEvaluator:
         episode_actions_history = []
         episode_q_values_history = []  # Store Q-values for debugging
         step_count = 0
+
+        # 延長模式追蹤（只剩 1 個 agent 時延長 100 步）
+        self._extension_started = False
+        self._extension_steps = 0
         done = False
+
+        # Track terminations across the episode
+        terminations = {agent_id: False for agent_id in self.agent_ids}
+
+        # Sub-step history for replay (記錄每個 robot 行動前後的狀態)
+        episode_substeps_history = []
 
         # Main simulation loop
         action_names = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'STAY']
         while not done:
-            # Select actions for all agents (in eval mode)
+            # Sequential actions: each robot acts one at a time
             actions = []
             step_q_values = {}  # Store Q-values for this step
-            for agent_id in self.agent_ids:
-                obs = observations[agent_id]
-                action, q_values = self.agents[agent_id].select_action(obs, eval_mode=True, return_q_values=True)
+            step_substeps = []  # 這個 step 的所有 sub-steps
+
+            for robot_id in range(self.num_robots):
+                agent_id = self.agent_ids[robot_id]
+                agent = self.agents[agent_id]
+
+                # 記錄行動前的狀態
+                state_before = self.env.env.get_global_state()
+                robots_before = {
+                    f"robot_{i}": {
+                        "position": [state_before['robots'][i]['x'], state_before['robots'][i]['y']],
+                        "energy": state_before['robots'][i]['energy'],
+                        "is_dead": not state_before['robots'][i]['is_active']
+                    }
+                    for i in range(self.num_robots)
+                }
+
+                # 1. Get current observation (latest state)
+                obs = self.env.get_observation(robot_id)
+
+                # 2. Select action with Q-values
+                action, q_values = agent.select_action(obs, eval_mode=True, return_q_values=True)
                 actions.append(action)
 
                 # Store Q-values
-                step_q_values[agent_id] = {
+                agent_q_values = {
                     action_names[i]: float(q_values[i])
                     for i in range(len(action_names))
                 }
+                step_q_values[agent_id] = agent_q_values
 
                 # Print Q-values for this step (debug output)
                 q_str = ", ".join([f"{action_names[i]}:{q_values[i]:.3f}" for i in range(len(action_names))])
-                selected_marker = " 👈" if True else ""
-                print(f"  {agent_id} Q-values: [{q_str}] Selected: {action_names[action]}{selected_marker}")
+                print(f"  {agent_id} Q-values: [{q_str}] Selected: {action_names[action]}")
 
-            # Step environment
-            next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
+                # 3. Execute action
+                next_obs, reward, terminated, truncated, info = self.env.step_single(robot_id, action)
+
+                # 記錄行動後的狀態
+                state_after = self.env.env.get_global_state()
+                robots_after = {
+                    f"robot_{i}": {
+                        "position": [state_after['robots'][i]['x'], state_after['robots'][i]['y']],
+                        "energy": state_after['robots'][i]['energy'],
+                        "is_dead": not state_after['robots'][i]['is_active']
+                    }
+                    for i in range(self.num_robots)
+                }
+
+                # 記錄這個 sub-step
+                substep_data = {
+                    "robot_id": robot_id,
+                    "agent_id": agent_id,
+                    "action": action_names[action],
+                    "q_values": agent_q_values,
+                    "robots_before": robots_before,
+                    "robots_after": robots_after,
+                    "reward": reward,
+                    "terminated": terminated
+                }
+                step_substeps.append(substep_data)
+
+                # Accumulate rewards
+                episode_rewards[agent_id] += reward
+
+                # Update termination status
+                if terminated:
+                    terminations[agent_id] = True
+
+            # 4. Advance step count after all robots have acted
+            max_steps_reached, truncations = self.env.advance_step()
+            step_count += 1
 
             # Render if enabled
             if self.args.render:
                 self.env.render()
 
-            # Store actions, infos, and Q-values for analysis and replay
+            # Collect infos for analysis and replay
+            state = self.env.env.get_global_state()
+            infos = self.env._get_infos(state)
+
+            # Store actions, infos, q_values, and substeps for analysis and replay
             episode_actions_history.append(actions)
             episode_infos_history.append(infos)
             episode_q_values_history.append(step_q_values)
-
-            # Accumulate rewards
-            for agent_id in self.agent_ids:
-                episode_rewards[agent_id] += rewards[agent_id]
-
-            # Update state
-            observations = next_observations
-            step_count += 1
+            episode_substeps_history.append(step_substeps)
 
             # Log EVERY step for complete dynamics tracking
             self.log_step_summary(step_count, episode_rewards, episode_infos_history)
 
             # Count surviving agents
             survival_count = sum(1 for agent_id in self.agent_ids
-                                if not infos.get(agent_id, {}).get('is_dead', False))
+                                if not terminations.get(agent_id, False))
 
-            # Check episode termination conditions:
-            # 1. All dead (0 surviving)
-            # 2. Only 1 survivor left (no more meaningful interaction)
-            # 3. Max steps reached
-            max_steps_reached = any(truncations.values())
-            
-            if survival_count <= 1 or max_steps_reached:
+            # 推論時：只剩 1 個 agent 後延長 100 步，然後結束
+            # 用來觀察勝利者的後續行為
+            if survival_count == 0:
                 done = True
-                if survival_count == 0:
-                    print(f"\n[Step {step_count}] All agents have died. Simulation ended.")
-                elif survival_count == 1:
-                    # Find the survivor
-                    survivor = [agent_id for agent_id in self.agent_ids
-                               if not infos.get(agent_id, {}).get('is_dead', False)][0]
-                    print(f"\n[Step {step_count}] Only {survivor} survives. Episode complete.")
-                else:
-                    print(f"\n[Step {step_count}] Max steps reached. Simulation ended.")
+                print(f"\n[Step {step_count}] All agents have died. Simulation ended.")
+            elif survival_count == 1 and self.num_robots > 1 and not self._extension_started:
+                # 開始延長 100 步
+                self._extension_started = True
+                self._extension_steps = 0
+                survivor = [agent_id for agent_id in self.agent_ids
+                           if not terminations.get(agent_id, False)][0]
+                print(f"\n[Step {step_count}] Only {survivor} survives. Extending for 100 more steps...")
+            elif self._extension_started:
+                self._extension_steps += 1
+                if self._extension_steps >= 100:
+                    done = True
+                    print(f"\n[Step {step_count}] Extension complete (100 steps). Simulation ended.")
+            elif max_steps_reached:
+                done = True
+                print(f"\n[Step {step_count}] Max steps reached. Simulation ended.")
 
         # Final summary
         final_stats = self.log_final_summary(step_count, episode_rewards, episode_infos_history)
 
-        # Save replay data for visualization
-        replay_file = self.save_replay(episode_actions_history, episode_infos_history, episode_q_values_history, step_count)
+        # Save replay data for visualization (包含 sub-steps)
+        replay_file = self.save_replay(episode_actions_history, episode_infos_history, episode_q_values_history, episode_substeps_history, step_count)
         print(f"\nReplay data saved to: {replay_file}")
 
         return final_stats
@@ -487,14 +556,15 @@ class ModelEvaluator:
         }
 
     def save_replay(self, episode_actions: List[List[int]], episode_infos: List[Dict],
-                   episode_q_values: List[Dict], total_steps: int) -> str:
+                   episode_q_values: List[Dict], episode_substeps: List[List[Dict]], total_steps: int) -> str:
         """
         Save episode replay data as JSON for visualization with pygame
 
         Args:
-            episode_actions: List of action lists (each step has 4 actions, one per robot)
+            episode_actions: List of action lists (each step has N actions, one per robot)
             episode_infos: List of info dicts from environment
             episode_q_values: List of Q-value dicts for each step
+            episode_substeps: List of substep lists (每個 step 包含每個 robot 的 sub-step 資料)
             total_steps: Total number of steps in episode
 
         Returns:
@@ -509,12 +579,11 @@ class ModelEvaluator:
         replay_data = {
             "config": {
                 "grid_size": self.args.env_n,
+                "num_robots": self.num_robots,
                 "charger_positions": self._parse_charger_positions(),
                 "robot_initial_energies": {
-                    "robot_0": self.robot_energies[0],
-                    "robot_1": self.robot_energies[1],
-                    "robot_2": self.robot_energies[2],
-                    "robot_3": self.robot_energies[3],
+                    f"robot_{i}": self.robot_energies[i]
+                    for i in range(self.num_robots)
                 },
                 "parameters": {
                     "e_move": self.args.e_move,
@@ -531,19 +600,21 @@ class ModelEvaluator:
             actions = episode_actions[step_idx]
             infos = episode_infos[step_idx]
             q_values = episode_q_values[step_idx]
+            substeps = episode_substeps[step_idx]
 
             # Build step data
             step_data = {
                 "step": step_idx,
                 "actions": {
                     f"robot_{i}": action_names[actions[i]]
-                    for i in range(4)
+                    for i in range(self.num_robots)
                 },
-                "q_values": q_values,  # Store Q-values for each robot
-                "robots": {}
+                "q_values": q_values,
+                "robots": {},
+                "sub_steps": substeps  # 新增：每個 robot 的 sub-step 資料
             }
 
-            # Extract robot state at this step
+            # Extract robot state at this step (final state after all robots acted)
             for agent_id in self.agent_ids:
                 agent_info = infos.get(agent_id, {})
                 pos = agent_info.get('position', (0, 0))
@@ -570,14 +641,6 @@ class ModelEvaluator:
                         "victim": collision_target,
                         "damage": damage
                     })
-
-            # Check for charges
-            for agent_id in self.agent_ids:
-                agent_info = infos.get(agent_id, {})
-                if agent_info.get('total_charges', 0) > 0 and step_idx == 0:
-                    # First occurrence of charges, check if this step incremented it
-                    pass  # This is complex to track per-step, mark for simplicity
-                # For now, we'll skip per-step charge tracking as it requires state diff
 
             # Check for deaths (death happens when energy <= 0)
             if step_idx > 0:
@@ -676,6 +739,7 @@ def main():
 
     # Environment parameters (should match training config)
     parser.add_argument("--env-n", type=int, default=3, help="Environment grid size (n×n)")
+    parser.add_argument("--num-robots", type=int, default=4, help="Number of robots (1-4)")
     parser.add_argument("--initial-energy", type=int, default=100, help="Initial energy for all robots (used if individual energies not specified)")
     parser.add_argument("--robot-0-energy", type=int, default=None, help="Initial energy for robot 0")
     parser.add_argument("--robot-1-energy", type=int, default=None, help="Initial energy for robot 1")
@@ -689,7 +753,7 @@ def main():
                        help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')
 
     # Simulation settings
-    parser.add_argument("--max-steps", type=int, default=10000, help="Maximum steps for single long episode")
+    parser.add_argument("--max-steps", type=int, default=1000, help="Maximum steps for single long episode")
     parser.add_argument("--eval-epsilon", type=float, default=0.0,
                        help="Epsilon for evaluation (0 for deterministic inference)")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor (should match training)")

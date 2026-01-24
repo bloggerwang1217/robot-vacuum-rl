@@ -1,0 +1,809 @@
+{
+  "config": {
+    "grid_size": 5,
+    "charger_positions": [
+      [
+        2,
+        2
+      ]
+    ],
+    "robot_initial_energies": {
+      "robot_0": 1000,
+      "robot_1": 100,
+      "robot_2": 100,
+      "robot_3": 100
+    },
+    "parameters": {
+      "e_move": 1,
+      "e_collision": 20,
+      "e_boundary": 50,
+      "e_charge": 20
+    }
+  },
+  "steps": [
+    {
+      "step": 0,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "DOWN",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1045.140869140625,
+          "DOWN": 1094.15625,
+          "LEFT": 1030.700439453125,
+          "RIGHT": 1075.2589111328125,
+          "STAY": 1043.76708984375
+        },
+        "robot_1": {
+          "UP": -125.6930160522461,
+          "DOWN": -91.2070541381836,
+          "LEFT": -103.84647369384766,
+          "RIGHT": -112.86235046386719,
+          "STAY": -98.54745483398438
+        },
+        "robot_2": {
+          "UP": -103.3668212890625,
+          "DOWN": -130.694091796875,
+          "LEFT": -120.58409118652344,
+          "RIGHT": -101.93506622314453,
+          "STAY": -117.35020446777344
+        },
+        "robot_3": {
+          "UP": -100.79293823242188,
+          "DOWN": -111.12139129638672,
+          "LEFT": -100.9671630859375,
+          "RIGHT": -117.42987823486328,
+          "STAY": -104.3947525024414
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            0,
+            1
+          ],
+          "energy": 999,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            4,
+            1
+          ],
+          "energy": 99,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            4
+          ],
+          "energy": 99,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            4,
+            3
+          ],
+          "energy": 99,
+          "is_dead": false
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 1,
+      "actions": {
+        "robot_0": "RIGHT",
+        "robot_1": "LEFT",
+        "robot_2": "UP",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1069.764404296875,
+          "DOWN": 1080.39501953125,
+          "LEFT": 1030.886962890625,
+          "RIGHT": 1125.2550048828125,
+          "STAY": 1043.6910400390625
+        },
+        "robot_1": {
+          "UP": 139.68783569335938,
+          "DOWN": 136.70205688476562,
+          "LEFT": 155.405029296875,
+          "RIGHT": 141.33462524414062,
+          "STAY": 118.16449737548828
+        },
+        "robot_2": {
+          "UP": 224.9212646484375,
+          "DOWN": 171.17770385742188,
+          "LEFT": 202.71495056152344,
+          "RIGHT": 190.8915557861328,
+          "STAY": 135.69979858398438
+        },
+        "robot_3": {
+          "UP": 162.53843688964844,
+          "DOWN": 136.21437072753906,
+          "LEFT": 180.103515625,
+          "RIGHT": 128.72032165527344,
+          "STAY": 112.82225799560547
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            1,
+            1
+          ],
+          "energy": 998,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            1
+          ],
+          "energy": 98,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            3
+          ],
+          "energy": 98,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            3,
+            3
+          ],
+          "energy": 98,
+          "is_dead": false
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 2,
+      "actions": {
+        "robot_0": "RIGHT",
+        "robot_1": "LEFT",
+        "robot_2": "UP",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1103.455078125,
+          "DOWN": 1129.9378662109375,
+          "LEFT": 1077.388916015625,
+          "RIGHT": 1137.194580078125,
+          "STAY": 1099.5179443359375
+        },
+        "robot_1": {
+          "UP": 243.9111328125,
+          "DOWN": 228.9343719482422,
+          "LEFT": 253.16012573242188,
+          "RIGHT": 239.59120178222656,
+          "STAY": 209.30751037597656
+        },
+        "robot_2": {
+          "UP": 270.0153503417969,
+          "DOWN": 239.35272216796875,
+          "LEFT": 267.0689392089844,
+          "RIGHT": 246.6282501220703,
+          "STAY": 223.07139587402344
+        },
+        "robot_3": {
+          "UP": 264.5490417480469,
+          "DOWN": 232.4871063232422,
+          "LEFT": 273.9812316894531,
+          "RIGHT": 229.8822784423828,
+          "STAY": 219.2891082763672
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            1,
+            1
+          ],
+          "energy": 977,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            1
+          ],
+          "energy": 77,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 97,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            2,
+            3
+          ],
+          "energy": 97,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 20
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 20
+        }
+      ]
+    },
+    {
+      "step": 3,
+      "actions": {
+        "robot_0": "RIGHT",
+        "robot_1": "LEFT",
+        "robot_2": "LEFT",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1095.319580078125,
+          "DOWN": 1119.9970703125,
+          "LEFT": 1069.3701171875,
+          "RIGHT": 1129.150634765625,
+          "STAY": 1093.5860595703125
+        },
+        "robot_1": {
+          "UP": 223.4970703125,
+          "DOWN": 213.0725555419922,
+          "LEFT": 234.58383178710938,
+          "RIGHT": 221.21412658691406,
+          "STAY": 202.136474609375
+        },
+        "robot_2": {
+          "UP": 255.1211395263672,
+          "DOWN": 237.86965942382812,
+          "LEFT": 259.7281494140625,
+          "RIGHT": 237.4236602783203,
+          "STAY": 219.79159545898438
+        },
+        "robot_3": {
+          "UP": 273.3158874511719,
+          "DOWN": 239.9049530029297,
+          "LEFT": 279.60382080078125,
+          "RIGHT": 241.5363311767578,
+          "STAY": 229.89413452148438
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            1,
+            1
+          ],
+          "energy": 956,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            3,
+            1
+          ],
+          "energy": 56,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            0,
+            2
+          ],
+          "energy": 96,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            1,
+            3
+          ],
+          "energy": 96,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "collision",
+          "attacker": "robot_0",
+          "victim": "robot_1",
+          "damage": 20
+        },
+        {
+          "type": "collision",
+          "attacker": "robot_1",
+          "victim": "robot_0",
+          "damage": 20
+        }
+      ]
+    },
+    {
+      "step": 4,
+      "actions": {
+        "robot_0": "DOWN",
+        "robot_1": "LEFT",
+        "robot_2": "LEFT",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1107.908203125,
+          "DOWN": 1140.372314453125,
+          "LEFT": 1088.3533935546875,
+          "RIGHT": 1140.3580322265625,
+          "STAY": 1117.831298828125
+        },
+        "robot_1": {
+          "UP": 201.3385009765625,
+          "DOWN": 197.48011779785156,
+          "LEFT": 215.66091918945312,
+          "RIGHT": 202.721923828125,
+          "STAY": 196.16705322265625
+        },
+        "robot_2": {
+          "UP": 222.25466918945312,
+          "DOWN": 210.31271362304688,
+          "LEFT": 226.20664978027344,
+          "RIGHT": 207.7576141357422,
+          "STAY": 182.53909301757812
+        },
+        "robot_3": {
+          "UP": 283.9938049316406,
+          "DOWN": 247.8075408935547,
+          "LEFT": 286.4664306640625,
+          "RIGHT": 255.3175506591797,
+          "STAY": 240.2093048095703
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            1,
+            2
+          ],
+          "energy": 955,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 55,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            0,
+            2
+          ],
+          "energy": 45,
+          "is_dead": false
+        },
+        "robot_3": {
+          "position": [
+            0,
+            3
+          ],
+          "energy": 95,
+          "is_dead": false
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 5,
+      "actions": {
+        "robot_0": "RIGHT",
+        "robot_1": "LEFT",
+        "robot_2": "LEFT",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1108.94775390625,
+          "DOWN": 1082.5111083984375,
+          "LEFT": 1056.45458984375,
+          "RIGHT": 1134.4923095703125,
+          "STAY": 1087.5584716796875
+        },
+        "robot_1": {
+          "UP": 207.09632873535156,
+          "DOWN": 204.64122009277344,
+          "LEFT": 221.77493286132812,
+          "RIGHT": 209.14894104003906,
+          "STAY": 205.75111389160156
+        },
+        "robot_2": {
+          "UP": 159.50640869140625,
+          "DOWN": 146.665771484375,
+          "LEFT": 165.35044860839844,
+          "RIGHT": 150.49952697753906,
+          "STAY": 148.80526733398438
+        },
+        "robot_3": {
+          "UP": 262.74346923828125,
+          "DOWN": 225.94911193847656,
+          "LEFT": 263.23577880859375,
+          "RIGHT": 238.59671020507812,
+          "STAY": 216.0855255126953
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            2
+          ],
+          "energy": 974,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            1,
+            1
+          ],
+          "energy": 54,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            0,
+            2
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_3": {
+          "position": [
+            0,
+            3
+          ],
+          "energy": 44,
+          "is_dead": false
+        }
+      },
+      "events": [
+        {
+          "type": "death",
+          "robot": "robot_2",
+          "cause": "energy_depleted"
+        }
+      ]
+    },
+    {
+      "step": 6,
+      "actions": {
+        "robot_0": "STAY",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "LEFT"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1143.8240966796875,
+          "DOWN": 1126.3828125,
+          "LEFT": 1119.1015625,
+          "RIGHT": 1122.0015869140625,
+          "STAY": 1162.8704833984375
+        },
+        "robot_1": {
+          "UP": 226.34197998046875,
+          "DOWN": 218.6522674560547,
+          "LEFT": 237.81561279296875,
+          "RIGHT": 223.2168426513672,
+          "STAY": 226.87513732910156
+        },
+        "robot_2": {
+          "UP": 0.8666734099388123,
+          "DOWN": -0.282604455947876,
+          "LEFT": 1.2254432439804077,
+          "RIGHT": 1.3891136646270752,
+          "STAY": 0.8325831294059753
+        },
+        "robot_3": {
+          "UP": 207.42166137695312,
+          "DOWN": 186.8262176513672,
+          "LEFT": 212.1790008544922,
+          "RIGHT": 190.796142578125,
+          "STAY": 196.74537658691406
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            2
+          ],
+          "energy": 993,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            0,
+            1
+          ],
+          "energy": 53,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            0,
+            2
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_3": {
+          "position": [
+            0,
+            3
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": [
+        {
+          "type": "death",
+          "robot": "robot_3",
+          "cause": "energy_depleted"
+        }
+      ]
+    },
+    {
+      "step": 7,
+      "actions": {
+        "robot_0": "STAY",
+        "robot_1": "LEFT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1151.3489990234375,
+          "DOWN": 1128.6466064453125,
+          "LEFT": 1126.04150390625,
+          "RIGHT": 1123.229736328125,
+          "STAY": 1165.0345458984375
+        },
+        "robot_1": {
+          "UP": 213.556884765625,
+          "DOWN": 199.7718048095703,
+          "LEFT": 222.04481506347656,
+          "RIGHT": 206.13363647460938,
+          "STAY": 209.1763458251953
+        },
+        "robot_2": {
+          "UP": 0.5465478301048279,
+          "DOWN": -1.3169138431549072,
+          "LEFT": 0.2545265257358551,
+          "RIGHT": 0.9911911487579346,
+          "STAY": -0.3010113537311554
+        },
+        "robot_3": {
+          "UP": 0.9288568496704102,
+          "DOWN": -0.8288465738296509,
+          "LEFT": -0.20218169689178467,
+          "RIGHT": 0.28405502438545227,
+          "STAY": -0.35578882694244385
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            2
+          ],
+          "energy": 1000,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            0,
+            1
+          ],
+          "energy": 2,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            0,
+            2
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_3": {
+          "position": [
+            0,
+            3
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 8,
+      "actions": {
+        "robot_0": "STAY",
+        "robot_1": "RIGHT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1169.589599609375,
+          "DOWN": 1153.79052734375,
+          "LEFT": 1150.506591796875,
+          "RIGHT": 1145.1202392578125,
+          "STAY": 1193.1649169921875
+        },
+        "robot_1": {
+          "UP": 3.776185989379883,
+          "DOWN": 6.804116249084473,
+          "LEFT": 5.020011901855469,
+          "RIGHT": 7.8786492347717285,
+          "STAY": 3.515181303024292
+        },
+        "robot_2": {
+          "UP": -2.261354446411133,
+          "DOWN": -3.1521265506744385,
+          "LEFT": -2.3459219932556152,
+          "RIGHT": -1.7966582775115967,
+          "STAY": -2.552781343460083
+        },
+        "robot_3": {
+          "UP": 0.6394681930541992,
+          "DOWN": -1.069175362586975,
+          "LEFT": -0.9498776197433472,
+          "RIGHT": 0.5364783406257629,
+          "STAY": -1.676578164100647
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            2
+          ],
+          "energy": 1000,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            1,
+            1
+          ],
+          "energy": 1,
+          "is_dead": false
+        },
+        "robot_2": {
+          "position": [
+            0,
+            2
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_3": {
+          "position": [
+            0,
+            3
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": []
+    },
+    {
+      "step": 9,
+      "actions": {
+        "robot_0": "STAY",
+        "robot_1": "RIGHT",
+        "robot_2": "RIGHT",
+        "robot_3": "UP"
+      },
+      "q_values": {
+        "robot_0": {
+          "UP": 1183.5174560546875,
+          "DOWN": 1168.02392578125,
+          "LEFT": 1161.81298828125,
+          "RIGHT": 1162.9622802734375,
+          "STAY": 1211.6640625
+        },
+        "robot_1": {
+          "UP": -1.2359064817428589,
+          "DOWN": 2.393071174621582,
+          "LEFT": -0.4657725393772125,
+          "RIGHT": 4.469236850738525,
+          "STAY": -2.538484811782837
+        },
+        "robot_2": {
+          "UP": -3.1841697692871094,
+          "DOWN": -3.221294641494751,
+          "LEFT": -2.863320827484131,
+          "RIGHT": -2.5573012828826904,
+          "STAY": -2.809952974319458
+        },
+        "robot_3": {
+          "UP": 0.5301790237426758,
+          "DOWN": -1.1367632150650024,
+          "LEFT": -0.7745131254196167,
+          "RIGHT": 0.45973899960517883,
+          "STAY": -1.6006675958633423
+        }
+      },
+      "robots": {
+        "robot_0": {
+          "position": [
+            2,
+            2
+          ],
+          "energy": 1000,
+          "is_dead": false
+        },
+        "robot_1": {
+          "position": [
+            2,
+            1
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_2": {
+          "position": [
+            0,
+            2
+          ],
+          "energy": 0,
+          "is_dead": true
+        },
+        "robot_3": {
+          "position": [
+            0,
+            3
+          ],
+          "energy": 0,
+          "is_dead": true
+        }
+      },
+      "events": [
+        {
+          "type": "death",
+          "robot": "robot_1",
+          "cause": "energy_depleted"
+        }
+      ]
+    }
+  ]
+}

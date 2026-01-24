@@ -53,3 +53,8 @@ Thumbs.db
 *.pt
 analysis_output/
 *.html
+
+# Logs and temporary files
+logs/
+*.backup
+profiler_output.txt
