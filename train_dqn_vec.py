@@ -223,7 +223,13 @@ class VectorizedMultiAgentTrainer:
             'e_collision': args.e_collision,
             'e_boundary': args.e_boundary,
             'n_steps': args.max_episode_steps,
-            'charger_positions': charger_positions
+            'charger_positions': charger_positions,
+            'dust_max': args.dust_max,
+            'dust_rate': args.dust_rate,
+            'dust_epsilon': args.dust_epsilon,
+            'charger_dust_max_ratio': args.charger_dust_max_ratio,
+            'charger_dust_rate_ratio': args.charger_dust_rate_ratio,
+            'dust_reward_scale': args.dust_reward_scale,
         }
 
         # Create vectorized environment
@@ -594,6 +600,8 @@ class VectorizedMultiAgentTrainer:
 
             self.global_step += 1
 
+        # Always save final models at end of training
+        self.save_models(f"episode_{self.total_episodes}")
         print(f"Training completed! Total episodes: {self.total_episodes}")
 
     def _train_single(self):
@@ -716,12 +724,18 @@ def main():
     parser.add_argument("--robot-2-energy", type=int, default=100, help="Initial energy for robot 2")
     parser.add_argument("--robot-3-energy", type=int, default=100, help="Initial energy for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
-    parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
+    parser.add_argument("--e-charge", type=float, default=1.5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision")
     parser.add_argument("--e-boundary", type=int, default=50, help="Energy loss when hitting wall")
     parser.add_argument("--max-episode-steps", type=int, default=500, help="Maximum steps per episode")
     parser.add_argument("--charger-positions", type=str, default=None,
                        help='Charger positions as "y1,x1;y2,x2;..."')
+    parser.add_argument("--dust-max", type=float, default=10.0, help="Max dust per normal cell")
+    parser.add_argument("--dust-rate", type=float, default=0.5, help="Dust sigmoid growth rate")
+    parser.add_argument("--dust-epsilon", type=float, default=0.5, help="Dust growth seed value")
+    parser.add_argument("--charger-dust-max-ratio", type=float, default=0.3, help="Charger cell max dust ratio vs normal")
+    parser.add_argument("--charger-dust-rate-ratio", type=float, default=0.5, help="Charger cell growth rate ratio vs normal")
+    parser.add_argument("--dust-reward-scale", type=float, default=0.05, help="Dust reward multiplier")
 
     # DQN hyperparameters
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
@@ -759,7 +773,7 @@ def main():
 
     # Auto-evaluation after training
     parser.add_argument("--eval-after-training", action=argparse.BooleanOptionalAction, default=True, help="Run evaluation after training (use --no-eval-after-training to disable)")
-    parser.add_argument("--eval-steps", type=int, default=10000, help="Max steps for evaluation")
+    parser.add_argument("--eval-steps", type=int, default=1000, help="Max steps for evaluation")
 
     args = parser.parse_args()
 

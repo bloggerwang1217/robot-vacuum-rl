@@ -87,7 +87,13 @@ class ModelEvaluator:
             e_boundary=args.e_boundary,
             n_steps=args.max_steps,  # Use max_steps for single long episode
             render_mode=render_mode,
-            charger_positions=charger_positions
+            charger_positions=charger_positions,
+            dust_max=args.dust_max,
+            dust_rate=args.dust_rate,
+            dust_epsilon=args.dust_epsilon,
+            charger_dust_max_ratio=args.charger_dust_max_ratio,
+            charger_dust_rate_ratio=args.charger_dust_rate_ratio,
+            dust_reward_scale=args.dust_reward_scale,
         )
 
         # Initialize agents (only for the robots that exist)
@@ -173,6 +179,9 @@ class ModelEvaluator:
 
         # Sub-step history for replay (記錄每個 robot 行動前後的狀態)
         episode_substeps_history = []
+
+        # Dust grid history (每個完整 step 後的灰塵快照)
+        episode_dust_history = []
 
         # Main simulation loop
         action_names = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'STAY']
@@ -261,11 +270,12 @@ class ModelEvaluator:
             state = self.env.env.get_global_state()
             infos = self.env._get_infos(state)
 
-            # Store actions, infos, q_values, and substeps for analysis and replay
+            # Store actions, infos, q_values, substeps, and dust for analysis and replay
             episode_actions_history.append(actions)
             episode_infos_history.append(infos)
             episode_q_values_history.append(step_q_values)
             episode_substeps_history.append(step_substeps)
+            episode_dust_history.append(state['dust_grid'].copy())
 
             # Log EVERY step for complete dynamics tracking
             self.log_step_summary(step_count, episode_rewards, episode_infos_history)
@@ -299,7 +309,7 @@ class ModelEvaluator:
         final_stats = self.log_final_summary(step_count, episode_rewards, episode_infos_history)
 
         # Save replay data for visualization (包含 sub-steps)
-        replay_file = self.save_replay(episode_actions_history, episode_infos_history, episode_q_values_history, episode_substeps_history, step_count)
+        replay_file = self.save_replay(episode_actions_history, episode_infos_history, episode_q_values_history, episode_substeps_history, episode_dust_history, step_count)
         print(f"\nReplay data saved to: {replay_file}")
 
         return final_stats
@@ -556,7 +566,8 @@ class ModelEvaluator:
         }
 
     def save_replay(self, episode_actions: List[List[int]], episode_infos: List[Dict],
-                   episode_q_values: List[Dict], episode_substeps: List[List[Dict]], total_steps: int) -> str:
+                   episode_q_values: List[Dict], episode_substeps: List[List[Dict]],
+                   episode_dust: List, total_steps: int) -> str:
         """
         Save episode replay data as JSON for visualization with pygame
 
@@ -572,8 +583,18 @@ class ModelEvaluator:
         """
         import json
         from pathlib import Path
+        import numpy as np
 
         action_names = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'STAY']
+
+        # 計算灰塵比例的分母（全地圖最大可能灰塵總量）
+        base_env = self.env.env
+        d_max_grid = np.where(
+            base_env.is_charger_grid,
+            base_env.dust_max * base_env.charger_dust_max_ratio,
+            base_env.dust_max
+        )
+        max_total_dust = float(d_max_grid.sum())
 
         # Build replay data structure
         replay_data = {
@@ -601,13 +622,24 @@ class ModelEvaluator:
             infos = episode_infos[step_idx]
             q_values = episode_q_values[step_idx]
             substeps = episode_substeps[step_idx]
+            dust_grid = episode_dust[step_idx]
+
+            # 灰塵比例：當前總灰塵 / 全地圖最大可能灰塵
+            dust_ratio = float(np.sum(dust_grid)) / max_total_dust if max_total_dust > 0 else 0.0
 
             # Build step data
             step_data = {
                 "step": step_idx,
+                "dust_ratio": round(dust_ratio, 4),
+                "dust_grid": [[round(float(dust_grid[y, x]), 4) for x in range(dust_grid.shape[1])]
+                              for y in range(dust_grid.shape[0])],
                 "actions": {
                     f"robot_{i}": action_names[actions[i]]
                     for i in range(self.num_robots)
+                },
+                "rewards": {
+                    s["agent_id"]: s["reward"]
+                    for s in substeps
                 },
                 "q_values": q_values,
                 "robots": {},
@@ -746,11 +778,17 @@ def main():
     parser.add_argument("--robot-2-energy", type=int, default=None, help="Initial energy for robot 2")
     parser.add_argument("--robot-3-energy", type=int, default=None, help="Initial energy for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
-    parser.add_argument("--e-charge", type=int, default=5, help="Energy gain per charge")
+    parser.add_argument("--e-charge", type=float, default=1.5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision (互撞或被推人時的傷害)")
     parser.add_argument("--e-boundary", type=int, default=50, help="Energy loss when hitting wall/boundary (撞牆懲罰)")
     parser.add_argument("--charger-positions", type=str, default=None,
                        help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')
+    parser.add_argument("--dust-max", type=float, default=10.0, help="Max dust per normal cell")
+    parser.add_argument("--dust-rate", type=float, default=0.5, help="Dust sigmoid growth rate")
+    parser.add_argument("--dust-epsilon", type=float, default=0.5, help="Dust growth seed value")
+    parser.add_argument("--charger-dust-max-ratio", type=float, default=0.3, help="Charger cell max dust ratio vs normal")
+    parser.add_argument("--charger-dust-rate-ratio", type=float, default=0.5, help="Charger cell growth rate ratio vs normal")
+    parser.add_argument("--dust-reward-scale", type=float, default=0.05, help="Dust reward multiplier")
 
     # Simulation settings
     parser.add_argument("--max-steps", type=int, default=1000, help="Maximum steps for single long episode")
