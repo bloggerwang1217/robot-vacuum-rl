@@ -80,12 +80,19 @@ class RobotVacuumEnv:
         self.n_steps = config['n_steps']
 
         # 灰塵機制參數
+        self.dust_enabled = config.get('dust_enabled', True)   # 是否啟用灰塵機制
         self.dust_max = config.get('dust_max', 10.0)           # 普通格上限
         self.dust_rate = config.get('dust_rate', 0.5)          # sigmoid 成長率
         self.dust_epsilon = config.get('dust_epsilon', 0.5)    # 起始 seed，防止 d=0 時完全停長
         self.charger_dust_max_ratio = config.get('charger_dust_max_ratio', 0.3)   # 充電座格上限倍率
         self.charger_dust_rate_ratio = config.get('charger_dust_rate_ratio', 0.5) # 充電座格成長率倍率
         self.epsilon = config.get('epsilon', 0.2)  # 預設探索率 20%
+        # 獨佔充電：有其他 robot 在 3x3 範圍內時充電無效
+        self.exclusive_charging = config.get('exclusive_charging', False)
+        # 每個 robot 的移動速度（teleport N 格，預設全部 1）
+        self.robot_speeds = config.get('robot_speeds', [1] * self.num_robots)
+        # 隨機起始位置：指定哪些 robot 每次 reset 時隨機選位置（set of robot indices）
+        self.random_start_robots = config.get('random_start_robots', set())
 
         # 初始化地圖（只有充電座，沒有家具和垃圾）
         self.static_grid = None        # 靜態地圖（充電座）
@@ -141,20 +148,39 @@ class RobotVacuumEnv:
         for y, x in self.charger_positions:
             self.static_grid[y, x] = self.CHARGER
 
-        # 2b. 初始化灰塵系統
-        self.dust_grid = np.zeros((self.n, self.n), dtype=np.float32)
-        self.is_charger_grid = np.zeros((self.n, self.n), dtype=bool)
-        for y, x in self.charger_positions:
-            self.is_charger_grid[y, x] = True
+        # 2b. 初始化灰塵系統（僅在啟用時）
+        if self.dust_enabled:
+            self.dust_grid = np.zeros((self.n, self.n), dtype=np.float32)
+            self.is_charger_grid = np.zeros((self.n, self.n), dtype=bool)
+            for y, x in self.charger_positions:
+                self.is_charger_grid[y, x] = True
 
-        # 3. 初始化機器人，固定放在四個角落（無論充電器在哪）
-        all_start_positions = [
+        # 3. 初始化機器人位置
+        all_corners = [
             (0, 0),
             (0, self.n - 1),
             (self.n - 1, 0),
             (self.n - 1, self.n - 1)
         ]
-        robot_start_positions = all_start_positions[:self.num_robots]
+        occupied = set()
+        corner_queue = list(all_corners)
+        robot_start_positions = [None] * self.num_robots
+
+        # 先把固定角落分配給非隨機機器人
+        for i in range(self.num_robots):
+            if i not in self.random_start_robots:
+                pos = corner_queue.pop(0)
+                robot_start_positions[i] = pos
+                occupied.add(pos)
+
+        # 再把隨機位置分配給隨機機器人
+        all_cells = [(y, x) for y in range(self.n) for x in range(self.n)]
+        for i in range(self.num_robots):
+            if i in self.random_start_robots:
+                candidates = [p for p in all_cells if p not in occupied]
+                pos = random.choice(candidates)
+                robot_start_positions[i] = pos
+                occupied.add(pos)
 
         # 計算全域最大血量（所有 robot 共用，弱者可以充電到這個上限）
         global_max_energy = max(self.robot_energies)
@@ -469,15 +495,19 @@ class RobotVacuumEnv:
                     robot['collided_by_counts'][aggressor_id] += 1
 
         # 3e. 收集灰塵：所有活躍機器人在最終位置收走灰塵並清零
-        for robot in self.robots:
-            if robot['is_active']:
-                y, x = robot['y'], robot['x']
-                dust = float(self.dust_grid[y, x])
-                robot['dust_collected_this_step'] = dust
-                robot['total_dust_collected'] += dust
-                self.dust_grid[y, x] = 0.0
+        if self.dust_enabled:
+            for robot in self.robots:
+                if robot['is_active']:
+                    y, x = robot['y'], robot['x']
+                    dust = float(self.dust_grid[y, x])
+                    robot['dust_collected_this_step'] = dust
+                    robot['total_dust_collected'] += dust
+                    self.dust_grid[y, x] = 0.0
 
         # 3c. 無線充電：以每個充電座為中心的 3x3 範圍內平分電量
+        # exclusive_charging=True 時：場上有任何其他存活 robot 則充電無效
+        any_enemy_alive = self.exclusive_charging and sum(r['is_active'] for r in self.robots) > 1
+
         for charger_y, charger_x in self.charger_positions:
             robots_in_range = [
                 robot for robot in self.robots
@@ -486,12 +516,15 @@ class RobotVacuumEnv:
                    abs(robot['y'] - charger_y) <= 1
             ]
             if robots_in_range:
-                charge_per_robot = self.e_charge / len(robots_in_range)
-                for robot in robots_in_range:
-                    robot['energy'] += charge_per_robot
-                    robot['charge_count'] += 1
-                    if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
-                        robot['non_home_charge_count'] += 1
+                if any_enemy_alive:
+                    pass  # 場上有敵人，充電無效
+                else:
+                    charge_per_robot = self.e_charge / len(robots_in_range)
+                    for robot in robots_in_range:
+                        robot['energy'] += charge_per_robot
+                        robot['charge_count'] += 1
+                        if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
+                            robot['non_home_charge_count'] += 1
 
         # 4. 更新所有機器人的關機狀態（允許超充：移除上限 cap）
         for robot in self.robots:
@@ -500,7 +533,8 @@ class RobotVacuumEnv:
                 robot['is_active'] = False
 
         # 4b. 更新灰塵累積（sigmoid 成長，每完整 step 一次）
-        self._update_dust()
+        if self.dust_enabled:
+            self._update_dust()
 
         # 5. 回合計數
         self.current_step += 1
@@ -645,20 +679,26 @@ class RobotVacuumEnv:
                     robot['y'], robot['x'] = py, px
 
         # 4. 無線充電：在充電座 3x3 範圍內就充電（平分給所有範圍內的活躍機器人）
+        # exclusive_charging=True 時：場上有任何其他存活 robot 則充電無效
+        any_enemy_alive = self.exclusive_charging and sum(r['is_active'] for r in self.robots) > 1
+
         if robot['is_active']:
             for charger_y, charger_x in self.charger_positions:
                 if abs(robot['x'] - charger_x) <= 1 and abs(robot['y'] - charger_y) <= 1:
-                    count_in_range = sum(
-                        1 for r in self.robots
-                        if r['is_active'] and
-                           abs(r['x'] - charger_x) <= 1 and
-                           abs(r['y'] - charger_y) <= 1
-                    )
-                    charge_amount = self.e_charge / count_in_range
-                    robot['energy'] += charge_amount
-                    robot['charge_count'] += 1
-                    if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
-                        robot['non_home_charge_count'] += 1
+                    if any_enemy_alive:
+                        pass  # 場上有敵人，充電無效
+                    else:
+                        count_in_range = sum(
+                            1 for r in self.robots
+                            if r['is_active'] and
+                               abs(r['x'] - charger_x) <= 1 and
+                               abs(r['y'] - charger_y) <= 1
+                        )
+                        charge_amount = self.e_charge / count_in_range
+                        robot['energy'] += charge_amount
+                        robot['charge_count'] += 1
+                        if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
+                            robot['non_home_charge_count'] += 1
 
         # 6. 更新能量下限並檢查死亡（允許超充：移除上限 cap）
         robot['energy'] = max(0, robot['energy'])
@@ -666,7 +706,7 @@ class RobotVacuumEnv:
             robot['is_active'] = False
 
         # 6b. 收集灰塵（確認活著才領）
-        if robot['is_active']:
+        if self.dust_enabled and robot['is_active']:
             y, x = robot['y'], robot['x']
             dust = float(self.dust_grid[y, x])
             robot['dust_collected_this_step'] = dust
@@ -690,7 +730,8 @@ class RobotVacuumEnv:
             done: 是否達到最大步數
         """
         self.current_step += 1
-        self._update_dust()
+        if self.dust_enabled:
+            self._update_dust()
         return self.current_step >= self.n_steps
 
     def _update_dust(self):
@@ -718,12 +759,14 @@ class RobotVacuumEnv:
         Returns:
             包含地圖和機器人狀態的字典
         """
-        return {
+        state = {
             'static_grid': self.static_grid.copy(),
             'robots': [robot.copy() for robot in self.robots],
             'current_step': self.current_step,
-            'dust_grid': self.dust_grid.copy(),
         }
+        if self.dust_enabled:
+            state['dust_grid'] = self.dust_grid.copy()
+        return state
 
     def render(self):
         """

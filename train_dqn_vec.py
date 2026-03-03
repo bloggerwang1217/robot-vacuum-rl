@@ -24,7 +24,8 @@ from dqn import DQN, init_weights
 
 # Import environments
 from gym import RobotVacuumGymEnv
-from vec_env import VectorizedRobotVacuumEnv
+from vec_env import VectorizedRobotVacuumEnv, SubprocVecEnv
+from batch_env import BatchRobotVacuumEnv
 
 
 class SharedBufferDQNAgent:
@@ -152,11 +153,68 @@ class SharedBufferDQNAgent:
             self.epsilon = self.epsilon_start + (self.epsilon_end - self.epsilon_start) * progress
 
     def save(self, filepath: str):
-        torch.save(self.q_net.state_dict(), filepath)
+        # 若 torch.compile 已包裝成 OptimizedModule，取出原始權重存檔
+        net = self.q_net._orig_mod if hasattr(self.q_net, '_orig_mod') else self.q_net
+        torch.save(net.state_dict(), filepath)
 
     def load(self, filepath: str):
-        self.q_net.load_state_dict(torch.load(filepath, map_location=self.device, weights_only=True))
+        state = torch.load(filepath, map_location=self.device, weights_only=True)
+        # 若 torch.compile 已包裝成 OptimizedModule，載入原始 module
+        net = self.q_net._orig_mod if hasattr(self.q_net, '_orig_mod') else self.q_net
+        net.load_state_dict(state)
         self.target_net.load_state_dict(self.q_net.state_dict())
+
+
+class NumpyReplayBuffer:
+    """
+    Numpy ring buffer — 比 deque 快約 3x。
+    避免 sample_batch 每次 list(deque) 的 O(capacity) 轉換。
+    """
+    def __init__(self, capacity: int, obs_dim: int):
+        self.capacity = capacity
+        self._states      = np.zeros((capacity, obs_dim), dtype=np.float32)
+        self._next_states = np.zeros((capacity, obs_dim), dtype=np.float32)
+        self._actions     = np.zeros(capacity, dtype=np.int64)
+        self._rewards     = np.zeros(capacity, dtype=np.float32)
+        self._dones       = np.zeros(capacity, dtype=np.float32)
+        self._n_steps     = np.ones(capacity,  dtype=np.float32)
+        self._ptr  = 0
+        self._size = 0
+
+    def append(self, transition):
+        state, action, reward, next_state, done, n_step = transition
+        i = self._ptr
+        self._states[i]      = state
+        self._next_states[i] = next_state
+        self._actions[i]     = action
+        self._rewards[i]     = reward
+        self._dones[i]       = float(done)
+        self._n_steps[i]     = n_step
+        self._ptr  = (i + 1) % self.capacity
+        self._size = min(self._size + 1, self.capacity)
+
+    def append_batch(self, states, actions, rewards, next_states, dones, n_steps):
+        """一次寫入 n 筆 transition，避免 Python for 迴圈。"""
+        n = len(states)
+        if n == 0:
+            return
+        idx = (self._ptr + np.arange(n)) % self.capacity
+        self._states[idx]      = states
+        self._next_states[idx] = next_states
+        self._actions[idx]     = actions
+        self._rewards[idx]     = rewards
+        self._dones[idx]       = dones
+        self._n_steps[idx]     = n_steps
+        self._ptr  = int((self._ptr + n) % self.capacity)
+        self._size = min(self._size + n, self.capacity)
+
+    def sample(self, batch_size: int):
+        idx = np.random.choice(self._size, size=batch_size, replace=False)
+        return (self._states[idx], self._actions[idx], self._rewards[idx],
+                self._next_states[idx], self._dones[idx], self._n_steps[idx])
+
+    def __len__(self):
+        return self._size
 
 
 class VectorizedMultiAgentTrainer:
@@ -201,6 +259,36 @@ class VectorizedMultiAgentTrainer:
         ]
         robot_energies = all_robot_energies[:self.num_robots]
 
+        all_robot_speeds = [
+            args.robot_0_speed,
+            args.robot_1_speed,
+            args.robot_2_speed,
+            args.robot_3_speed,
+        ]
+        robot_speeds = all_robot_speeds[:self.num_robots]
+        self.robot_speeds = robot_speeds  # turns per step for each robot
+
+        # Scripted robots: always play STAY, not trained
+        scripted_str = getattr(args, 'scripted_robots', '')
+        self.scripted_robots = set(int(x) for x in scripted_str.split(',') if x.strip()) if scripted_str else set()
+
+        # Random robots: random actions, not trained
+        random_str = getattr(args, 'random_robots', '')
+        self.random_robots = set(int(x) for x in random_str.split(',') if x.strip()) if random_str else set()
+
+        # Flee robots: flee heuristic, not trained
+        flee_str = getattr(args, 'flee_robots', '')
+        self.flee_robots = set(int(x) for x in flee_str.split(',') if x.strip()) if flee_str else set()
+
+        # Safe-random robots: wall-avoiding random walk, not trained
+        safe_random_str = getattr(args, 'safe_random_robots', '')
+        self.safe_random_robots = set(int(x) for x in safe_random_str.split(',') if x.strip()) if safe_random_str else set()
+
+        for label, s in [('STAY', self.scripted_robots), ('RANDOM', self.random_robots),
+                         ('SAFE_RANDOM', self.safe_random_robots), ('FLEE', self.flee_robots)]:
+            if s:
+                print(f"  robots [{sorted(s)}] → {label} (not trained)")
+
         charger_positions = None
         if args.charger_positions is not None:
             try:
@@ -218,6 +306,7 @@ class VectorizedMultiAgentTrainer:
             'num_robots': self.num_robots,
             'initial_energy': args.initial_energy,
             'robot_energies': robot_energies,
+            'robot_speeds': robot_speeds,
             'e_move': args.e_move,
             'e_charge': args.e_charge,
             'e_collision': args.e_collision,
@@ -230,16 +319,34 @@ class VectorizedMultiAgentTrainer:
             'charger_dust_max_ratio': args.charger_dust_max_ratio,
             'charger_dust_rate_ratio': args.charger_dust_rate_ratio,
             'dust_reward_scale': args.dust_reward_scale,
+            'dust_enabled': not args.no_dust,
+            'exclusive_charging': args.exclusive_charging,
+            'random_start_robots': set(
+                int(x) for x in getattr(args, 'random_start_robots', '').split(',') if x.strip()
+            ),
         }
 
         # Create vectorized environment
+        num_workers = getattr(args, 'num_workers', 1)
+        use_batch   = getattr(args, 'batch_env', False)
         if self.num_envs == 1:
             # 單環境模式（向後兼容）
             self.use_vec_env = False
             self.env = RobotVacuumGymEnv(**env_kwargs)
             observation_dim = self.env.observation_space.shape[0]
+        elif use_batch:
+            # 全 numpy 批次環境（最快，無 Python 物件 overhead）
+            self.use_vec_env = True
+            self.env = BatchRobotVacuumEnv(self.num_envs, env_kwargs)
+            observation_dim = self.env.observation_space.shape[0]
+            print(f"Using BatchRobotVacuumEnv (fully vectorized numpy)")
+        elif num_workers > 1:
+            # Multiprocessing 模式：num_workers 個 subprocess 並行跑 env
+            self.use_vec_env = True
+            self.env = SubprocVecEnv(self.num_envs, env_kwargs, num_workers)
+            observation_dim = self.env.observation_space.shape[0]
         else:
-            # Vectorized 模式
+            # Vectorized 模式（單 process，原始）
             self.use_vec_env = True
             self.env = VectorizedRobotVacuumEnv(self.num_envs, env_kwargs)
             observation_dim = self.env.observation_space.shape[0]
@@ -259,9 +366,24 @@ class VectorizedMultiAgentTrainer:
                 args=args
             )
 
-        # Independent Replay Buffer (每個 agent 獨立)
-        self.memories = {agent_id: deque(maxlen=args.memory_size) for agent_id in self.agent_ids}
-        
+        # Load pre-trained models if specified (for curriculum phase continuation)
+        load_dir = getattr(args, 'load_model_dir', None)
+        if load_dir:
+            print(f"Loading models from: {load_dir}")
+            for i, agent_id in enumerate(self.agent_ids):
+                model_path = os.path.join(load_dir, f"{agent_id}.pt")
+                if os.path.exists(model_path):
+                    self.agents[agent_id].load(model_path)
+                    print(f"  Loaded {agent_id} from {model_path}")
+                else:
+                    print(f"  WARNING: {model_path} not found, using fresh weights for {agent_id}")
+
+        # Independent Replay Buffer (每個 agent 獨立) — numpy ring buffer
+        self.memories = {
+            agent_id: NumpyReplayBuffer(args.memory_size, observation_dim)
+            for agent_id in self.agent_ids
+        }
+
         # N-step buffer (per environment, per agent)
         self.n_step = getattr(args, 'n_step', 1)
         if self.n_step > 1:
@@ -274,9 +396,41 @@ class VectorizedMultiAgentTrainer:
         else:
             self.n_step_buffers = None
 
+        # 向量化 n-step buffer（vec_env 模式專用，取代 Python deque）
+        if self.n_step > 1 and self.use_vec_env:
+            _n, _k, _d = self.num_envs, self.n_step, observation_dim
+            self.ns_states      = np.zeros((_n, self.n_agents, _k, _d), dtype=np.float32)
+            self.ns_next_states = np.zeros((_n, self.n_agents, _k, _d), dtype=np.float32)
+            self.ns_actions     = np.zeros((_n, self.n_agents, _k),     dtype=np.int32)
+            self.ns_rewards     = np.zeros((_n, self.n_agents, _k),     dtype=np.float32)
+            self.ns_dones       = np.zeros((_n, self.n_agents, _k),     dtype=bool)
+            self.ns_ptr         = np.zeros((_n, self.n_agents),         dtype=np.int32)
+            self.ns_count       = np.zeros((_n, self.n_agents),         dtype=np.int32)
+
+        # 預算 gamma^k 權重（n-step return 向量化用）
+        if self.n_step > 1:
+            _gamma = self.agents[self.agent_ids[0]].gamma
+            self._gamma_weights = np.array([_gamma**k for k in range(self.n_step)], dtype=np.float32)
+            self._gamma_scalar  = _gamma
+        else:
+            self._gamma_weights = None
+            self._gamma_scalar  = None
+
         # Training counters
         self.global_step = 0
-        self.total_episodes = 0
+        # Parse episode offset from load_model_dir (e.g. "episode_2000" → offset=2000)
+        # so that checkpoint names continue from the last run (episode_2500, 3000, ...)
+        self.episode_offset = 0
+        if load_dir:
+            dirname = os.path.basename(load_dir.rstrip('/'))
+            parts = dirname.replace('_interrupted', '').split('_')
+            if parts[0] == 'episode' and len(parts) >= 2:
+                try:
+                    self.episode_offset = int(parts[1])
+                    print(f"  Episode offset: {self.episode_offset} (checkpoints will continue from here)")
+                except ValueError:
+                    pass
+        self.total_episodes = self.episode_offset
 
         # Cumulative death counter
         self.cumulative_deaths = {agent_id: 0 for agent_id in self.agent_ids}
@@ -297,9 +451,12 @@ class VectorizedMultiAgentTrainer:
                                           dtype=torch.float32, device=self.device)
 
         # Episode statistics tracking (for logging)
-        self._episode_rewards = np.zeros((self.num_envs if self.use_vec_env else 1, self.n_agents))
-        self._episode_steps = np.zeros(self.num_envs if self.use_vec_env else 1, dtype=np.int32)
-        self._episode_immediate_kills = np.zeros(self.num_envs if self.use_vec_env else 1, dtype=np.int32)
+        _n = self.num_envs if self.use_vec_env else 1
+        self._episode_rewards = np.zeros((_n, self.n_agents))
+        self._episode_steps = np.zeros(_n, dtype=np.int32)
+        self._episode_immediate_kills = np.zeros(_n, dtype=np.int32)
+        self._episode_active_collisions = np.zeros((_n, self.n_agents), dtype=np.int32)
+        self._robot0_death_step = np.full(_n, -1, dtype=np.int32)  # -1 = alive
 
     def remember(self, state, action, reward, next_state, done, env_idx=0, agent_idx=0):
         """
@@ -324,63 +481,154 @@ class VectorizedMultiAgentTrainer:
             buffer.append((state, action, reward, next_state, done))
 
             if done:
-                # Episode 結束：將 buffer 中所有剩餘的 transition 都存入
-                # 這確保直接導致死亡的動作能被學習到（1-step transition with full penalty）
+                # Episode 結束：backward recurrence O(k) 取代原本 O(k²) 雙層迴圈
                 buffer_list = list(buffer)
+                k = len(buffer_list)
                 _, _, _, end_next_state, end_done = buffer_list[-1]
 
-                for start_idx in range(len(buffer_list)):
-                    # 從 start_idx 開始計算到結尾的 n-step return
-                    n_step_return = 0
-                    for offset, (_, _, r, _, _) in enumerate(buffer_list[start_idx:]):
-                        n_step_return += (gamma ** offset) * r
+                # 向量化計算每個起始位置的 n-step return
+                rewards_arr = np.array([t[2] for t in buffer_list], dtype=np.float32)
+                returns = np.empty(k, dtype=np.float32)
+                returns[k - 1] = rewards_arr[k - 1]
+                for i in range(k - 2, -1, -1):
+                    returns[i] = rewards_arr[i] + self._gamma_scalar * returns[i + 1]
 
-                    # 取該位置的 state, action
-                    start_state, start_action, _, _, _ = buffer_list[start_idx]
-
-                    # 實際步數 = 從 start_idx 到結尾的長度
-                    actual_n_step = len(buffer_list) - start_idx
-
-                    # 存入該 agent 的 replay buffer
-                    agent_memory.append((start_state, start_action, n_step_return, end_next_state, end_done, actual_n_step))
+                for i in range(k):
+                    s, a = buffer_list[i][0], buffer_list[i][1]
+                    agent_memory.append((s, a, float(returns[i]), end_next_state, end_done, k - i))
 
                 buffer.clear()
 
             elif len(buffer) == self.n_step:
-                # 正常情況：累積滿 n 步
-                n_step_return = 0
-                for idx, (_, _, r, _, _) in enumerate(buffer):
-                    n_step_return += (gamma ** idx) * r
+                # 正常情況：np.dot 取代 Python 迴圈
+                rewards_arr = np.array([t[2] for t in buffer], dtype=np.float32)
+                n_step_return = float(np.dot(self._gamma_weights, rewards_arr))
 
-                start_state, start_action, _, _, _ = buffer[0]
+                start_state, start_action = buffer[0][0], buffer[0][1]
                 _, _, _, end_next_state, end_done = buffer[-1]
 
-                # 存入該 agent 的 replay buffer
                 agent_memory.append((start_state, start_action, n_step_return, end_next_state, end_done, self.n_step))
 
                 buffer.popleft()
 
-    def sample_batch(self, agent_id: str) -> Tuple:
-        """Sample a batch from agent's independent memory and convert to tensors"""
+    def remember_batch(self, obs: np.ndarray, actions: np.ndarray, rewards: np.ndarray,
+                       next_obs: np.ndarray, terminated: np.ndarray, robot_id: int):
+        """
+        向量化版 remember()：一次處理所有 num_envs 個 environment。
+
+        以 numpy circular buffer（ns_*）取代 Python deque，避免 256 次 Python 函式呼叫。
+        僅在 use_vec_env=True 且 n_step>1 時完整向量化；其他情況 fallback 到 remember()。
+
+        Args:
+            obs:        (E, obs_dim)  當前觀測
+            actions:    (E,)          動作
+            rewards:    (E,)          即時 reward
+            next_obs:   (E, obs_dim)  下一步觀測
+            terminated: (E,)          bool，是否 episode 結束
+            robot_id:   int           哪個 agent（= agent_idx）
+        """
+        agent_idx = robot_id
+        agent_id  = self.agent_ids[agent_idx]
         agent_memory = self.memories[agent_id]
-        batch_size = min(self.args.batch_size, len(agent_memory))
-        if batch_size == 0:
+        E = self.num_envs
+
+        # ── 1-step：直接 append_batch，最快 ──────────────────────────────────────
+        if self.n_step == 1:
+            agent_memory.append_batch(
+                obs, actions, rewards, next_obs,
+                terminated.astype(np.float32),
+                np.ones(E, dtype=np.float32)
+            )
+            return
+
+        # ── n-step，non-vec fallback（一般不會走到）──────────────────────────────
+        if not self.use_vec_env:
+            self.remember(obs[0], actions[0], rewards[0], next_obs[0], terminated[0], 0, robot_id)
+            return
+
+        k = self.n_step
+        env_range = np.arange(E)
+
+        # ── Step 1：寫入所有 env 的新 transition ────────────────────────────────
+        old_ptrs = self.ns_ptr[:, agent_idx].copy()          # (E,)
+        self.ns_states     [env_range, agent_idx, old_ptrs] = obs
+        self.ns_actions    [env_range, agent_idx, old_ptrs] = actions
+        self.ns_rewards    [env_range, agent_idx, old_ptrs] = rewards
+        self.ns_next_states[env_range, agent_idx, old_ptrs] = next_obs
+        self.ns_dones      [env_range, agent_idx, old_ptrs] = terminated
+
+        self.ns_ptr  [:, agent_idx] = (old_ptrs + 1) % k
+        self.ns_count[:, agent_idx] = np.minimum(self.ns_count[:, agent_idx] + 1, k)
+
+        # ── Step 2：Done envs → flush（反向遞推，O(k)）──────────────────────────
+        done_envs = np.where(terminated)[0]
+        if len(done_envs) > 0:
+            for env_idx in done_envs:
+                c       = int(self.ns_count[env_idx, agent_idx])
+                ptr_now = int(self.ns_ptr  [env_idx, agent_idx])
+                oldest  = (ptr_now - c) % k
+                ord_idx = [(oldest + i) % k for i in range(c)]
+
+                rewards_arr = self.ns_rewards[env_idx, agent_idx][ord_idx]
+                returns     = np.empty(c, dtype=np.float32)
+                returns[c - 1] = rewards_arr[c - 1]
+                for i in range(c - 2, -1, -1):
+                    returns[i] = rewards_arr[i] + self._gamma_scalar * returns[i + 1]
+
+                end_ns   = self.ns_next_states[env_idx, agent_idx, ord_idx[-1]]
+                end_done = True
+                for i in range(c):
+                    s = self.ns_states [env_idx, agent_idx, ord_idx[i]]
+                    a = int(self.ns_actions[env_idx, agent_idx, ord_idx[i]])
+                    agent_memory.append((s, a, float(returns[i]), end_ns, end_done, c - i))
+
+                # Reset this env's buffer
+                self.ns_ptr  [env_idx, agent_idx] = 0
+                self.ns_count[env_idx, agent_idx] = 0
+
+        # ── Step 3：Full buffer，non-done envs → 向量化 n-step return ────────────
+        full_mask = (self.ns_count[:, agent_idx] >= k) & (~terminated)
+        full_envs = np.where(full_mask)[0]
+        if len(full_envs) == 0:
+            return
+
+        # ns_ptr = oldest position（寫完後 ptr 已指向下一格，即最舊的格子）
+        oldest_ptrs  = self.ns_ptr[full_envs, agent_idx]              # (F,)
+        newest_ptrs  = (oldest_ptrs - 1 + k) % k                      # (F,)
+
+        # Gather rewards in chronological order: (F, k)
+        i_range     = np.arange(k)
+        gather_idx  = (oldest_ptrs[:, None] + i_range[None, :]) % k   # (F, k)
+        rew_ordered = self.ns_rewards[full_envs[:, None], agent_idx, gather_idx]
+
+        n_step_returns = rew_ordered @ self._gamma_weights             # (F,)
+        start_states   = self.ns_states     [full_envs, agent_idx, oldest_ptrs]  # (F, d)
+        start_actions  = self.ns_actions    [full_envs, agent_idx, oldest_ptrs]  # (F,)
+        end_next_states= self.ns_next_states[full_envs, agent_idx, newest_ptrs]  # (F, d)
+        end_dones      = self.ns_dones      [full_envs, agent_idx, newest_ptrs].astype(np.float32)
+
+        agent_memory.append_batch(
+            start_states, start_actions, n_step_returns,
+            end_next_states, end_dones,
+            np.full(len(full_envs), k, dtype=np.float32)
+        )
+
+    def sample_batch(self, agent_id: str) -> Tuple:
+        """Sample a batch from agent's NumpyReplayBuffer and convert to tensors"""
+        agent_memory = self.memories[agent_id]
+        if len(agent_memory) == 0:
             return None
-        batch = random.sample(list(agent_memory), batch_size)
-        states, actions, rewards, next_states, dones, actual_n_steps = zip(*batch)
+        batch_size = min(self.args.batch_size, len(agent_memory))
 
-        states_np = np.array(states, dtype=np.float32)
-        next_states_np = np.array(next_states, dtype=np.float32)
-        actions_np = np.array(actions, dtype=np.int64)
-        rewards_np = np.array(rewards, dtype=np.float32)
-        dones_np = np.array(dones, dtype=np.float32)
-        actual_n_steps_np = np.array(actual_n_steps, dtype=np.float32)
+        # NumpyReplayBuffer.sample() 直接回傳 numpy arrays，無需 list() 轉換
+        states_np, actions_np, rewards_np, next_states_np, dones_np, actual_n_steps_np = \
+            agent_memory.sample(batch_size)
 
-        states = torch.from_numpy(states_np).to(self.device, non_blocking=True)
-        next_states = torch.from_numpy(next_states_np).to(self.device, non_blocking=True)
-        actions = torch.from_numpy(actions_np).to(self.device, non_blocking=True)
-        rewards = torch.from_numpy(rewards_np).to(self.device, non_blocking=True)
-        dones = torch.from_numpy(dones_np).to(self.device, non_blocking=True)
+        states          = torch.from_numpy(states_np).to(self.device, non_blocking=True)
+        next_states     = torch.from_numpy(next_states_np).to(self.device, non_blocking=True)
+        actions         = torch.from_numpy(actions_np).to(self.device, non_blocking=True)
+        rewards         = torch.from_numpy(rewards_np).to(self.device, non_blocking=True)
+        dones           = torch.from_numpy(dones_np).to(self.device, non_blocking=True)
         actual_n_steps_t = torch.from_numpy(actual_n_steps_np).to(self.device, non_blocking=True)
 
         return states, actions, rewards, next_states, dones, actual_n_steps_t
@@ -484,6 +732,76 @@ class VectorizedMultiAgentTrainer:
 
         return actions
 
+    def _safe_random_actions(self, robot_id: int, obs: np.ndarray) -> np.ndarray:
+        """
+        Random walk that never hits walls.
+        Decodes grid position from obs[0,1] (normalized x,y), then samples
+        uniformly from the subset of actions that stay in bounds.
+        Action space: 0=UP(y-1) 1=DOWN(y+1) 2=LEFT(x-1) 3=RIGHT(x+1) 4=STAY
+        """
+        n = self.args.env_n
+        x = np.round(obs[:, 0] * (n - 1)).astype(int)
+        y = np.round(obs[:, 1] * (n - 1)).astype(int)
+        actions = np.empty(self.num_envs, dtype=np.int32)
+        for i in range(self.num_envs):
+            valid = [4]                         # STAY always ok
+            if y[i] > 0:     valid.append(0)    # UP
+            if y[i] < n - 1: valid.append(1)    # DOWN
+            if x[i] > 0:     valid.append(2)    # LEFT
+            if x[i] < n - 1: valid.append(3)    # RIGHT
+            actions[i] = np.random.choice(valid)
+        return actions
+
+    def _flee_actions(self, robot_id: int, obs: np.ndarray) -> np.ndarray:
+        """
+        Flee heuristic: move away from the first opponent, wall-aware.
+
+        Obs layout:
+          [x, y, energy, wall_up, wall_down, wall_left, wall_right, opp_dx, opp_dy, ...]
+          dx > 0 → opponent RIGHT → primary flee LEFT  (action 2)
+          dx < 0 → opponent LEFT  → primary flee RIGHT (action 3)
+          dy > 0 → opponent BELOW → primary flee UP    (action 0)
+          dy < 0 → opponent ABOVE → primary flee DOWN  (action 1)
+
+        If primary flee direction is blocked by wall, fall back to
+        the other axis. If both blocked, STAY.
+        """
+        dx = obs[:, 7]
+        dy = obs[:, 8]
+        wall_up    = obs[:, 3]  # 1.0 if y==0
+        wall_down  = obs[:, 4]  # 1.0 if y==n-1
+        wall_left  = obs[:, 5]  # 1.0 if x==0
+        wall_right = obs[:, 6]  # 1.0 if x==n-1
+
+        # Wall-check per action: 1 = blocked
+        blocked = {
+            0: wall_up,    # UP
+            1: wall_down,  # DOWN
+            2: wall_left,  # LEFT
+            3: wall_right, # RIGHT
+        }
+
+        # Preferred flee action per axis
+        h_pref = np.where(dx > 0, 2, np.where(dx < 0, 3, 4))  # LEFT / RIGHT / STAY
+        v_pref = np.where(dy > 0, 0, np.where(dy < 0, 1, 4))  # UP   / DOWN  / STAY
+
+        # Primary axis: whichever opponent distance is larger
+        use_h_primary = np.abs(dx) >= np.abs(dy)
+
+        actions = np.full(self.num_envs, 4, dtype=np.int32)
+        for i in range(self.num_envs):
+            primary = int(h_pref[i]) if use_h_primary[i] else int(v_pref[i])
+            fallback = int(v_pref[i]) if use_h_primary[i] else int(h_pref[i])
+
+            if primary != 4 and blocked[primary][i] < 0.5:
+                actions[i] = primary
+            elif fallback != 4 and blocked[fallback][i] < 0.5:
+                actions[i] = fallback
+            else:
+                actions[i] = 4  # STAY（被牆逼死角）
+
+        return actions
+
     def _train_vectorized(self):
         """Training loop for vectorized environments (sequential actions)"""
         print(f"Starting vectorized training with {self.num_envs} environments (sequential mode)...")
@@ -498,36 +816,72 @@ class VectorizedMultiAgentTrainer:
         # Track terminations per environment
         env_terminations = np.zeros((self.num_envs, self.n_agents), dtype=bool)
 
-        while self.total_episodes < self.args.num_episodes:
+        import signal as _signal
+        _interrupted = [False]
+        _orig_handler = _signal.getsignal(_signal.SIGINT)
+        def _sigint(sig, frame):
+            _interrupted[0] = True
+        _signal.signal(_signal.SIGINT, _sigint)
+
+        while self.total_episodes < self.episode_offset + self.args.num_episodes and not _interrupted[0]:
             # Sequential actions: each robot acts one at a time (across all envs)
+            # robot_speeds[i] determines how many turns per step each robot gets
             for robot_id in range(self.n_agents):
-                agent_id = self.agent_ids[robot_id]
+                n_turns = self.robot_speeds[robot_id]
+                is_scripted     = robot_id in self.scripted_robots
+                is_random       = robot_id in self.random_robots
+                is_safe_random  = robot_id in self.safe_random_robots
+                is_flee         = robot_id in self.flee_robots
+                is_learning = not (is_scripted or is_random or is_safe_random or is_flee)
 
-                # 1. Get current observation for this robot (all envs)
-                obs = self.env.get_observation(robot_id)  # (num_envs, obs_dim)
+                for _ in range(n_turns):
+                    # --- Action selection (4 modes) ---
+                    if is_scripted:
+                        actions = np.full(self.num_envs, 4, dtype=np.int32)  # STAY
+                    elif is_random:
+                        actions = np.random.randint(0, 5, size=self.num_envs).astype(np.int32)
+                    elif is_safe_random:
+                        obs = self.env.get_observation(robot_id)
+                        actions = self._safe_random_actions(robot_id, obs)
+                    elif is_flee:
+                        obs = self.env.get_observation(robot_id)
+                        actions = self._flee_actions(robot_id, obs)
+                    else:
+                        obs = self.env.get_observation(robot_id)
+                        actions = self.select_actions_for_robot(robot_id, obs)
 
-                # 2. Select actions for this robot (all envs)
-                actions = self.select_actions_for_robot(robot_id, obs)  # (num_envs,)
+                    # --- Execute ---
+                    next_obs, rewards, terminated, truncated, infos = self.env.step_single(robot_id, actions)
 
-                # 3. Execute actions for this robot (all envs)
-                next_obs, rewards, terminated, truncated, infos = self.env.step_single(robot_id, actions)
+                    # --- Bookkeeping (all modes) ---
+                    if self.use_vec_env and isinstance(self.env, BatchRobotVacuumEnv):
+                        # 全向量化：直接從 BatchRobotVacuumEnv 的 numpy array 讀碰撞數
+                        self._episode_rewards[:, robot_id] += rewards
+                        self._episode_active_collisions[:, robot_id] += \
+                            self.env.active_collisions_with[:, robot_id, :].sum(axis=1)
+                        env_terminations[:, robot_id] |= terminated
+                        if robot_id == 0:
+                            new_deaths = terminated & (self._robot0_death_step == -1)
+                            self._robot0_death_step[new_deaths] = \
+                                self._episode_steps[new_deaths] + 1
+                    else:
+                        for env_idx in range(self.num_envs):
+                            self._episode_rewards[env_idx, robot_id] += rewards[env_idx]
+                            self._episode_active_collisions[env_idx, robot_id] += sum(
+                                infos[env_idx].get(f'active_collisions_with_{j}', 0)
+                                for j in range(self.n_agents)
+                            )
+                            if terminated[env_idx]:
+                                env_terminations[env_idx, robot_id] = True
+                                if robot_id == 0 and self._robot0_death_step[env_idx] == -1:
+                                    self._robot0_death_step[env_idx] = self._episode_steps[env_idx] + 1
 
-                # 4. Store transitions
-                for env_idx in range(self.num_envs):
-                    self.remember(
-                        obs[env_idx],
-                        actions[env_idx],
-                        rewards[env_idx],
-                        next_obs[env_idx],
-                        terminated[env_idx],
-                        env_idx,
-                        robot_id
-                    )
-                    self._episode_rewards[env_idx, robot_id] += rewards[env_idx]
-
-                    # Update termination status
-                    if terminated[env_idx]:
-                        env_terminations[env_idx, robot_id] = True
+                    # --- Store transitions (learning mode only) ---
+                    if is_learning:
+                        if self.use_vec_env:
+                            self.remember_batch(obs, actions, rewards, next_obs, terminated, robot_id)
+                        else:
+                            self.remember(obs[0], actions[0], rewards[0], next_obs[0], terminated[0], 0, robot_id)
 
             # 5. Advance step count after all robots have acted
             done_mask, done_envs = self.env.advance_step()
@@ -569,40 +923,68 @@ class VectorizedMultiAgentTrainer:
 
                 if self.total_episodes % 100 == 0:
                     current_epsilon = self.agents['robot_0'].epsilon
-                    print(f"[Episode {self.total_episodes}] Steps: {steps} | "
-                          f"Mean Reward: {mean_reward:.2f} | Epsilon: {current_epsilon:.3f}")
+                    rewards_str = " | ".join(
+                        f"r{i}:{self._episode_rewards[env_idx, i]:.1f}"
+                        for i in range(self.n_agents)
+                    )
+                    collisions_str = ";".join(
+                        str(self._episode_active_collisions[env_idx, i])
+                        for i in range(self.n_agents)
+                    )
+                    death_step = self._robot0_death_step[env_idx]
+                    death_str = f"r0_died@{death_step}" if death_step != -1 else "r0_alive"
+                    print(f"[Episode {self.total_episodes}] Steps:{steps} | "
+                          f"{rewards_str} | Collisions({collisions_str}) | {death_str} | ε:{current_epsilon:.3f}")
 
                     # 計算所有 buffer 的總大小
                     total_buffer_size = sum(len(m) for m in self.memories.values())
-                    wandb.log({
+                    log_dict = {
                         "episode": self.total_episodes,
                         "episode_length": steps,
                         "mean_episode_reward": mean_reward,
                         "epsilon": current_epsilon,
                         "global_step": self.global_step,
                         "buffer_size": total_buffer_size
-                    })
+                    }
+                    for i in range(self.n_agents):
+                        log_dict[f"robot_{i}/episode_reward"] = self._episode_rewards[env_idx, i]
+                        log_dict[f"robot_{i}/active_collisions"] = int(self._episode_active_collisions[env_idx, i])
+                    if death_step != -1:
+                        log_dict["robot_0/death_step"] = int(death_step)
+                    wandb.log(log_dict)
 
                 # Reset episode statistics for this environment
                 self._episode_rewards[env_idx].fill(0)
                 self._episode_steps[env_idx] = 0
+                self._episode_active_collisions[env_idx].fill(0)
                 env_terminations[env_idx, :] = False
+                self._robot0_death_step[env_idx] = -1
 
-                # Save models periodically
-                if self.total_episodes % self.args.save_frequency == 0:
+                # Save models periodically (skip the very first step = offset itself)
+                new_ep = self.total_episodes - self.episode_offset
+                if new_ep > 0 and new_ep % self.args.save_frequency == 0:
                     self.save_models(f"episode_{self.total_episodes}")
 
-            # Update epsilon based on training progress
+            # Update epsilon based on training progress (relative to this run's episodes)
             if len(done_envs) > 0:
-                progress = self.total_episodes / self.args.num_episodes
+                progress = (self.total_episodes - self.episode_offset) / self.args.num_episodes
                 for agent in self.agents.values():
                     agent.set_epsilon_by_progress(progress)
 
             self.global_step += 1
 
-        # Always save final models at end of training
-        self.save_models(f"episode_{self.total_episodes}")
-        print(f"Training completed! Total episodes: {self.total_episodes}")
+        _signal.signal(_signal.SIGINT, _orig_handler)  # restore handler
+
+        if _interrupted[0]:
+            ckpt = f"episode_{self.total_episodes}_interrupted"
+            print("\n\n[Interrupted] Ctrl+C detected — saving current model...")
+            self.save_models(ckpt)
+            print(f"[Interrupted] Saved to: {self.save_dir}/{ckpt}")
+            print(f"[Interrupted] To continue from this checkpoint, add:")
+            print(f"  --load-model-dir {self.save_dir}/{ckpt}")
+        else:
+            self.save_models(f"episode_{self.total_episodes}")
+            print(f"Training completed! Total episodes: {self.total_episodes}")
 
     def _train_single(self):
         """Training loop for single environment (sequential actions)"""
@@ -723,6 +1105,10 @@ def main():
     parser.add_argument("--robot-1-energy", type=int, default=100, help="Initial energy for robot 1")
     parser.add_argument("--robot-2-energy", type=int, default=100, help="Initial energy for robot 2")
     parser.add_argument("--robot-3-energy", type=int, default=100, help="Initial energy for robot 3")
+    parser.add_argument("--robot-0-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 0")
+    parser.add_argument("--robot-1-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 1")
+    parser.add_argument("--robot-2-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 2")
+    parser.add_argument("--robot-3-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=float, default=1.5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision")
@@ -736,6 +1122,21 @@ def main():
     parser.add_argument("--charger-dust-max-ratio", type=float, default=0.3, help="Charger cell max dust ratio vs normal")
     parser.add_argument("--charger-dust-rate-ratio", type=float, default=0.5, help="Charger cell growth rate ratio vs normal")
     parser.add_argument("--dust-reward-scale", type=float, default=0.05, help="Dust reward multiplier")
+    parser.add_argument("--no-dust", action="store_true", default=False, help="Disable dust system (removes n² obs dimensions)")
+    parser.add_argument("--exclusive-charging", action="store_true", default=False,
+                        help="充電座獨佔模式：有其他 robot 在 3x3 範圍內時充電無效")
+    parser.add_argument("--scripted-robots", type=str, default="",
+                        help='Comma-separated robot IDs to fix as STAY (no training), e.g. "1" or "1,2"')
+    parser.add_argument("--random-robots", type=str, default="",
+                        help='Comma-separated robot IDs that use random actions (no training), e.g. "1"')
+    parser.add_argument("--safe-random-robots", type=str, default="",
+                        help='Comma-separated robot IDs that use wall-avoiding random walk (no training), e.g. "1"')
+    parser.add_argument("--flee-robots", type=str, default="",
+                        help='Comma-separated robot IDs that use flee heuristic (no training), e.g. "1"')
+    parser.add_argument("--random-start-robots", type=str, default="",
+                        help='Comma-separated robot IDs to randomize start position each episode, e.g. "0"')
+    parser.add_argument("--load-model-dir", type=str, default=None,
+                        help='Load pre-trained models from this dir to continue training (curriculum phase)')
 
     # DQN hyperparameters
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
@@ -756,7 +1157,13 @@ def main():
 
     # Vectorized training parameters
     parser.add_argument("--num-envs", type=int, default=8, help="Number of parallel environments")
+    parser.add_argument("--num-workers", type=int, default=1,
+                        help="Subprocess workers for env parallelism (1=disabled, N>1=SubprocVecEnv). "
+                             "num_envs must be divisible by num_workers. "
+                             "建議: --num-envs 32 --num-workers 8 (8 cores, 4 envs each)")
     parser.add_argument("--train-frequency", type=int, default=4, help="Train every N steps")
+    parser.add_argument("--batch-env", action="store_true", default=False,
+                        help="使用全 numpy 批次環境（BatchRobotVacuumEnv），大幅加速 env_step")
 
     # Training settings
     parser.add_argument("--num-episodes", type=int, default=10000, help="Number of training episodes")
@@ -845,16 +1252,34 @@ def main():
         # Add individual robot energies (only for robots that exist)
         if args.num_robots >= 1:
             eval_cmd.extend(["--robot-0-energy", str(args.robot_0_energy)])
+            eval_cmd.extend(["--robot-0-speed", str(args.robot_0_speed)])
         if args.num_robots >= 2:
             eval_cmd.extend(["--robot-1-energy", str(args.robot_1_energy)])
+            eval_cmd.extend(["--robot-1-speed", str(args.robot_1_speed)])
         if args.num_robots >= 3:
             eval_cmd.extend(["--robot-2-energy", str(args.robot_2_energy)])
+            eval_cmd.extend(["--robot-2-speed", str(args.robot_2_speed)])
         if args.num_robots >= 4:
             eval_cmd.extend(["--robot-3-energy", str(args.robot_3_energy)])
+            eval_cmd.extend(["--robot-3-speed", str(args.robot_3_speed)])
 
         # Add charger positions if specified
         if args.charger_positions:
             eval_cmd.extend(["--charger-positions", args.charger_positions])
+
+        # Add boolean flags
+        if args.no_dust:
+            eval_cmd.append("--no-dust")
+        if args.exclusive_charging:
+            eval_cmd.append("--exclusive-charging")
+        if args.scripted_robots:
+            eval_cmd.extend(["--scripted-robots", args.scripted_robots])
+        if args.random_robots:
+            eval_cmd.extend(["--random-robots", args.random_robots])
+        if args.safe_random_robots:
+            eval_cmd.extend(["--safe-random-robots", args.safe_random_robots])
+        if args.flee_robots:
+            eval_cmd.extend(["--flee-robots", args.flee_robots])
 
         # Add wandb settings
         if args.wandb_entity:

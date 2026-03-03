@@ -25,9 +25,10 @@ class DQN(nn.Module):
     Deep Q-Network with MLP architecture
 
     Network structure:
-    - Input layer: observation_dim (29 for our multi-robot env)
+    - Input layer: obs_dim = 3 + (N-1)*3 + C*2 + n²
+                   e.g. 2 robots + 1 charger, 5×5 → 3+3+2+25 = 33
     - Hidden layers: 128 -> 256 -> 256 -> 128
-    - Output layer: num_actions (5 for our multi-robot env)
+    - Output layer: num_actions (5: up/down/left/right/stay)
     """
     def __init__(self, num_actions, input_dim):
         super(DQN, self).__init__()

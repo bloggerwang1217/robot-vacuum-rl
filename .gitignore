@@ -49,8 +49,8 @@ Thumbs.db
 
 # Pygame
 
-# Models and Training Data
-*.pt
+# Models and Training Data (all model weights, replays, checkpoints)
+models/
 analysis_output/
 *.html
 
@@ -58,3 +58,5 @@ analysis_output/
 logs/
 *.backup
 profiler_output.txt
+
+analysis/output/

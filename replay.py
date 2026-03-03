@@ -34,18 +34,18 @@ except ImportError:
 class ReplayVisualizer:
     """Visualize robot vacuum episode replay using pygame"""
 
-    def __init__(self, replay_file: str, speed: float = 2.0, cell_size: int = 60):
+    def __init__(self, replay_file: str, speed: float = 8.0, cell_size: int = 60):
         """
         Initialize replay visualizer
 
         Args:
             replay_file: Path to JSON replay file
-            speed: Initial playback speed (steps per second, default 2.0)
+            speed: Initial playback speed (substeps per second, default 8.0)
             cell_size: Size of each grid cell in pixels
         """
         self.replay_file = Path(replay_file)
         self.cell_size = cell_size
-        self.speed = speed / 60.0
+        self.speed = speed
         self.step_accumulator = 0
         self.button_height = 40
         self.button_width = 100
@@ -66,12 +66,12 @@ class ReplayVisualizer:
 
         # Playback state
         self.current_step = -1  # Start at -1 so step 0 shows initial state
-        self.current_substep = -1  # -1 表示顯示 step 開始前的狀態, 0~N-1 表示各 robot 行動後
+        self.current_substep = -1  # -1 = show state before step starts, 0~N-1 = after each robot acts
         self.is_paused = True  # Start paused
         self.is_running = True
         self.last_recorded_step = -2  # Track last recorded step
-        self.show_substeps = True  # 是否顯示 sub-steps（可切換）
-        self.has_substeps = False  # 是否有 sub-steps 資料（由 _load_replay 設定）
+        self.show_substeps = True  # DEFAULT: Show sub-steps (one robot at a time)
+        self.has_substeps = False  # Whether replay data has sub-steps (set by _load_replay)
 
         # Colors
         self.COLORS = {
@@ -95,6 +95,75 @@ class ReplayVisualizer:
             'robot_3': self.COLORS['robot_3'],
         }
 
+    def _split_multicell_substeps(self, data: Dict) -> None:
+        """
+        Normalize substeps so each substep covers exactly 1 cell of movement.
+
+        Older replay files may record one substep per *robot* (covering all of that
+        robot's turns in one entry, e.g. before=[0,0] after=[2,0] for speed=2).
+        This function splits any such substep into individual 1-cell sub-entries so
+        that the replay always shows one cell per RIGHT keypress.
+
+        Operates in-place on data['steps'].
+        """
+        for step in data['steps']:
+            if 'sub_steps' not in step:
+                continue
+
+            new_substeps = []
+            for ss in step['sub_steps']:
+                robot_id  = ss['robot_id']
+                agent_id  = ss['agent_id']
+                rb = ss['robots_before'][agent_id]['position']
+                ra = ss['robots_after'][agent_id]['position']
+                dx = ra[0] - rb[0]
+                dy = ra[1] - rb[1]
+                manhattan = abs(dx) + abs(dy)
+
+                if manhattan <= 1:
+                    # Already a single-cell move (or STAY) — keep as-is
+                    new_substeps.append(ss)
+                else:
+                    # Multi-cell move: split into individual 1-cell steps.
+                    # Strategy: advance horizontally first, then vertically.
+                    dir_x = 1 if dx > 0 else (-1 if dx < 0 else 0)
+                    dir_y = 1 if dy > 0 else (-1 if dy < 0 else 0)
+                    moves = [(dir_x, 0)] * abs(dx) + [(0, dir_y)] * abs(dy)
+
+                    cur_pos = list(rb)
+                    # Deep-copy robots_before for the first sub-entry
+                    cur_robots_before = {
+                        rid: dict(rinfo) | {'position': list(rinfo['position'])}
+                        for rid, rinfo in ss['robots_before'].items()
+                    }
+
+                    for i, (mx, my) in enumerate(moves):
+                        next_pos = [cur_pos[0] + mx, cur_pos[1] + my]
+                        is_last  = (i == len(moves) - 1)
+
+                        # robots_after: update the acting robot's position
+                        robots_after_i = {
+                            rid: dict(rinfo) | {'position': list(rinfo['position'])}
+                            for rid, rinfo in ss['robots_after'].items()
+                        }
+                        robots_after_i[agent_id] = dict(ss['robots_after'][agent_id]) | {'position': next_pos}
+
+                        sub_entry = dict(ss) | {
+                            'robots_before': cur_robots_before,
+                            'robots_after':  robots_after_i,
+                        }
+                        # Only the last sub-entry carries the reward/terminated signal
+                        if not is_last:
+                            sub_entry = dict(sub_entry) | {'reward': 0.0, 'terminated': False}
+
+                        new_substeps.append(sub_entry)
+
+                        # Advance state for next iteration
+                        cur_pos = next_pos
+                        cur_robots_before = robots_after_i
+
+            step['sub_steps'] = new_substeps
+
     def _load_replay(self) -> Dict:
         """Load replay data from JSON file"""
         try:
@@ -104,11 +173,15 @@ class ReplayVisualizer:
             print(f"  Total steps: {len(data['steps'])}")
             print(f"  Grid size: {data['config']['grid_size']}x{data['config']['grid_size']}")
 
-            # 檢查是否有 sub_steps 資料
+            # Check if replay has sub_steps data
             if data['steps'] and 'sub_steps' in data['steps'][0]:
-                num_robots = len(data['steps'][0]['sub_steps'])
-                print(f"  Sub-steps enabled: {num_robots} robots per step")
                 self.has_substeps = True
+                # Normalize: ensure every substep covers exactly 1 cell of movement.
+                # This fixes old-format files where one substep could cover a speed-2
+                # robot's entire 2-cell move.
+                self._split_multicell_substeps(data)
+                num_display = len(data['steps'][0]['sub_steps'])
+                print(f"  Sub-steps enabled: {num_display} display frames per step")
             else:
                 print(f"  Sub-steps: Not available (legacy replay)")
                 self.has_substeps = False
@@ -154,21 +227,26 @@ class ReplayVisualizer:
         print("  S: Toggle sub-step view")
         print("  R: Reset to start")
         print("  Q: Quit")
+        print("="*60)
+        mode = "ON (one cell at a time)" if self.show_substeps else "OFF (all-at-once)"
+        print(f">>> Sub-step mode: {mode} [DEFAULT: ON]")
+        print(f">>> Each robot/turn moves one cell at a time (press RIGHT to advance)")
+        print(f">>> Step counter only increases after all robots finish")
         print("="*60 + "\n")
 
         while self.is_running:
             self._handle_events()
 
             if not self.is_paused:
-                self.step_accumulator += self.speed
+                self.step_accumulator += self.speed / 60.0  # speed is steps/sec, convert to steps/frame
                 if self.step_accumulator >= 1.0:
-                    # 自動播放時前進
-                    for _ in range(int(self.step_accumulator)):
-                        self._step_forward()
-                    self.step_accumulator = 0.0
-                    # 檢查是否到達結尾
+                    # Advance one substep at a time (not multiple at once)
+                    self._step_forward()
+                    self.step_accumulator -= 1.0
+                    # Check if reached end
                     if self.current_step >= len(self.replay_data['steps']) - 1:
-                        if not (self.has_substeps and self.show_substeps):
+                        step_data_last = self.replay_data['steps'][self.current_step]
+                        if not (self.show_substeps and step_data_last.get('sub_steps')):
                             self.is_paused = True
                         else:
                             step_data = self.replay_data['steps'][self.current_step]
@@ -202,11 +280,11 @@ class ReplayVisualizer:
                     self._step_backward()
                     self.is_paused = True
                 elif event.key == pygame.K_UP:
-                    self.speed = min(self.speed + 0.5, 5.0)
-                    print(f"Speed: {self.speed:.1f}x")
+                    self.speed = min(self.speed + 1.0, 30.0)
+                    print(f"Speed: {self.speed:.1f} substeps/sec")
                 elif event.key == pygame.K_DOWN:
-                    self.speed = max(self.speed - 0.5, 0.1)
-                    print(f"Speed: {self.speed:.1f}x")
+                    self.speed = max(self.speed - 1.0, 0.5)
+                    print(f"Speed: {self.speed:.1f} substeps/sec")
                 elif event.key == pygame.K_r:
                     self.current_step = -1
                     self.current_substep = -1
@@ -214,25 +292,53 @@ class ReplayVisualizer:
                 elif event.key == pygame.K_s:
                     # Toggle sub-step view
                     self.show_substeps = not self.show_substeps
-                    print(f"Sub-step view: {'ON' if self.show_substeps else 'OFF'}")
+                    mode = "ON (per-robot)" if self.show_substeps else "OFF (all-at-once)"
+                    print(f"Sub-step view: {mode}")
+                    print(f"  -> RIGHT key now advances {'one sub-step' if self.show_substeps else 'whole step'}")
                 elif event.key == pygame.K_q:
                     self.is_running = False
 
+    def _simulate_robot_move(self, robot_state: Dict, action: str, grid_size: int) -> Dict:
+        """Simulate a single robot's move (simplified, no collision detection)"""
+        new_state = {
+            'position': robot_state['position'].copy(),
+            'energy': robot_state['energy'],
+            'is_dead': robot_state['is_dead']
+        }
+
+        if new_state['is_dead']:
+            return new_state
+
+        x, y = new_state['position']
+
+        if action == 'UP':
+            y = max(0, y - 1)
+        elif action == 'DOWN':
+            y = min(grid_size - 1, y + 1)
+        elif action == 'LEFT':
+            x = max(0, x - 1)
+        elif action == 'RIGHT':
+            x = min(grid_size - 1, x + 1)
+        # STAY: no change
+
+        new_state['position'] = [x, y]
+        return new_state
+
     def _get_display_state(self, config: Dict) -> Tuple[Dict, Optional[Dict], bool, Optional[int]]:
         """
-        根據 current_step 和 current_substep 決定要顯示的狀態
+        Determine which state to display based on current_step and current_substep
 
         Returns:
-            current_step_data: 當前要顯示的 robot 狀態
-            action_step_data: 要顯示箭頭的動作資料（可能為 None）
-            show_actions: 是否顯示動作箭頭
-            current_robot_id: 當前正在行動的 robot ID（sub-step 模式下），None 表示顯示所有
+            current_step_data: Current robot states to display
+            action_step_data: Action data for drawing arrows (may be None)
+            show_actions: Whether to show action arrows
+            current_robot_id: Current acting robot ID (in sub-step mode), None = show all
         """
         grid_size = config['grid_size']
         num_robots = config.get('num_robots', 4)
 
         if self.current_step == -1:
-            # 初始狀態：robots 在角落
+            # Initial state: robots at corners
             initial_positions = [
                 [0, 0], [grid_size - 1, 0], [0, grid_size - 1], [grid_size - 1, grid_size - 1]
             ]
@@ -244,7 +350,8 @@ class ReplayVisualizer:
                         'is_dead': False
                     }
                     for i in range(num_robots)
-                }
+                },
+                'events': []  # No events at initial state
             }
 
             if len(self.replay_data['steps']) > 0:
@@ -256,38 +363,133 @@ class ReplayVisualizer:
 
             return current_step_data, action_step_data, show_actions, None
 
-        # 取得當前 step 資料
+        # Get current step data
         step_data = self.replay_data['steps'][self.current_step]
 
-        # 檢查是否有 sub_steps 且啟用 sub-step 顯示
-        if self.has_substeps and self.show_substeps and 'sub_steps' in step_data:
+        # Check if sub_steps exist in this specific step (not global has_substeps flag)
+        if self.show_substeps and 'sub_steps' in step_data and step_data['sub_steps']:
+            # ── Path A: substep-array-based ─────────────────────────────────────
+            # Each entry in sub_steps[] is exactly one cell of movement (guaranteed by
+            # _split_multicell_substeps called at load time).  Each RIGHT keypress
+            # advances current_substep by 1, showing one sub_steps entry at a time.
             sub_steps = step_data['sub_steps']
 
             if self.current_substep == -1:
-                # 顯示這個 step 開始前的狀態（= 第一個 sub-step 的 robots_before）
-                if sub_steps:
-                    current_step_data = {'robots': sub_steps[0]['robots_before']}
-                    # 顯示第一個 robot 即將執行的動作
-                    action_step_data = {'actions': {sub_steps[0]['agent_id']: sub_steps[0]['action']}}
-                    return current_step_data, action_step_data, True, sub_steps[0]['robot_id']
+                # Prepare state: show robots_before of the first substep
+                current_step_data = {
+                    'robots': sub_steps[0]['robots_before'],
+                    'dust_grid': step_data.get('dust_grid', None),
+                    'events': []
+                }
+                action_step_data = {
+                    'actions': {sub_steps[0]['agent_id']: sub_steps[0]['action']},
+                    'q_values': {sub_steps[0]['agent_id']: sub_steps[0].get('q_values', {})},
+                    'rewards': {}
+                }
+                return current_step_data, action_step_data, True, sub_steps[0]['robot_id']
+            else:
+                # Show robots_after of substep[current_substep]
+                substep_idx = min(self.current_substep, len(sub_steps) - 1)
+                cur_ss = sub_steps[substep_idx]
+                current_step_data = {
+                    'robots': cur_ss['robots_after'],
+                    'dust_grid': step_data.get('dust_grid', None),
+                    'events': step_data.get('events', [])
+                }
+
+                # Accumulate rewards from all executed substeps
+                rewards = {}
+                for i in range(substep_idx + 1):
+                    sub = sub_steps[i]
+                    rewards[sub['agent_id']] = sub.get('reward', 0)
+
+                # Arrow / highlight for the NEXT substep (if any)
+                if substep_idx + 1 < len(sub_steps):
+                    nxt = sub_steps[substep_idx + 1]
+                    action_step_data = {
+                        'actions': {nxt['agent_id']: nxt['action']},
+                        'q_values': {nxt['agent_id']: nxt.get('q_values', {})},
+                        'rewards': rewards
+                    }
+                    return current_step_data, action_step_data, True, nxt['robot_id']
                 else:
-                    current_step_data = step_data
+                    action_step_data = {'actions': {}, 'q_values': {}, 'rewards': rewards}
+                    return current_step_data, action_step_data, False, None
+
+        elif self.show_substeps:
+            # ── Path B: legacy simulation (no sub_steps recorded) ───────────────
+            # Old replay files that have no per-turn sub_steps data.
+            # We simulate one robot per substep using _simulate_robot_move so that
+            # we always move exactly 1 cell even if the final position is 2+ cells away.
+            if self.current_step > 0:
+                prev_step = self.replay_data['steps'][self.current_step - 1]
+                prev_robots = prev_step['robots']
+            else:
+                initial_positions = [
+                    [0, 0], [grid_size - 1, 0], [0, grid_size - 1], [grid_size - 1, grid_size - 1]
+                ]
+                prev_robots = {
+                    f'robot_{i}': {
+                        'position': initial_positions[i] if i < len(initial_positions) else [0, 0],
+                        'energy': config['robot_initial_energies'].get(f'robot_{i}', 100),
+                        'is_dead': False
+                    }
+                    for i in range(num_robots)
+                }
+
+            actions = step_data.get('actions', {})
+            q_values = step_data.get('q_values', {})
+            all_rewards = step_data.get('rewards', {})
+
+            if self.current_substep == -1:
+                current_step_data = {
+                    'robots': prev_robots,
+                    'dust_grid': step_data.get('dust_grid', None),
+                    'events': []
+                }
+                if 'robot_0' in actions:
+                    action_step_data = {
+                        'actions': {'robot_0': actions['robot_0']},
+                        'q_values': {'robot_0': q_values.get('robot_0', {})},
+                        'rewards': {}
+                    }
+                    return current_step_data, action_step_data, True, 0
+                else:
                     return current_step_data, None, False, None
             else:
-                # 顯示第 current_substep 個 robot 行動後的狀態
-                substep_idx = min(self.current_substep, len(sub_steps) - 1)
-                current_step_data = {'robots': sub_steps[substep_idx]['robots_after']}
+                # Simulate: robots 0..current_substep have each moved 1 cell
+                # (using _simulate_robot_move so speed-2 robots don't teleport)
+                simulated_robots = dict(prev_robots)
+                executed_rewards = {}
+                for i in range(min(self.current_substep + 1, num_robots)):
+                    agent_id = f'robot_{i}'
+                    action = actions.get(agent_id, 'STAY')
+                    simulated_robots[agent_id] = self._simulate_robot_move(
+                        prev_robots[agent_id], action, grid_size)
+                    if agent_id in all_rewards:
+                        executed_rewards[agent_id] = all_rewards[agent_id]
 
-                # 顯示下一個 robot 的動作（如果有的話）
-                if substep_idx + 1 < len(sub_steps):
-                    next_substep = sub_steps[substep_idx + 1]
-                    action_step_data = {'actions': {next_substep['agent_id']: next_substep['action']}}
-                    return current_step_data, action_step_data, True, next_substep['robot_id']
-                else:
-                    # 這個 step 的最後一個 sub-step，不顯示箭頭
-                    return current_step_data, None, False, None
+                current_step_data = {
+                    'robots': simulated_robots,
+                    'dust_grid': step_data.get('dust_grid', None),
+                    'events': step_data.get('events', [])
+                }
+
+                next_robot_id = self.current_substep + 1
+                if next_robot_id < num_robots:
+                    next_agent_id = f'robot_{next_robot_id}'
+                    if next_agent_id in actions:
+                        action_step_data = {
+                            'actions': {next_agent_id: actions[next_agent_id]},
+                            'q_values': {next_agent_id: q_values.get(next_agent_id, {})},
+                            'rewards': executed_rewards
+                        }
+                        return current_step_data, action_step_data, True, next_robot_id
+
+                action_step_data = {'actions': {}, 'q_values': {}, 'rewards': executed_rewards}
+                return current_step_data, action_step_data, False, None
         else:
-            # 沒有 sub-steps 或關閉 sub-step 顯示：使用原有邏輯
+            # Sub-step display disabled: show all robots at once
             current_step_data = step_data
 
             if self.current_step < len(self.replay_data['steps']) - 1:
@@ -300,55 +502,68 @@ class ReplayVisualizer:
             return current_step_data, action_step_data, show_actions, None
 
     def _step_forward(self):
-        """前進一步（如果啟用 sub-steps 則前進一個 sub-step）"""
-        if not self.has_substeps or not self.show_substeps:
-            # 沒有 sub-steps 或關閉 sub-step 顯示：直接前進一個 step
+        """Advance one step (or one sub-step if enabled)"""
+        if not self.show_substeps:
+            # Sub-step display disabled: advance whole step
             self.current_step = min(
                 self.current_step + 1,
                 len(self.replay_data['steps']) - 1
             )
             self.current_substep = -1
         else:
-            # 有 sub-steps：逐個 sub-step 前進
+            # Sub-step mode enabled (either real or simulated)
             if self.current_step == -1:
-                # 從初始狀態進入 step 0
+                # From initial state to step 0
                 self.current_step = 0
-                self.current_substep = -1  # 顯示 step 0 開始前的狀態
+                self.current_substep = -1
             elif self.current_step < len(self.replay_data['steps']):
                 step_data = self.replay_data['steps'][self.current_step]
-                num_substeps = len(step_data.get('sub_steps', []))
+
+                # Get number of substeps (real or simulated)
+                if 'sub_steps' in step_data:
+                    num_substeps = len(step_data['sub_steps'])
+                else:
+                    # Simulate: number of robots
+                    num_substeps = self.replay_data['config'].get('num_robots', 4)
 
                 if self.current_substep < num_substeps - 1:
-                    # 還有更多 sub-steps
+                    # More substeps remaining
                     self.current_substep += 1
                 else:
-                    # 這個 step 的所有 sub-steps 都看完了，進入下一個 step
+                    # All substeps done, move to next step
                     if self.current_step < len(self.replay_data['steps']) - 1:
                         self.current_step += 1
                         self.current_substep = -1
 
     def _step_backward(self):
-        """後退一步（如果啟用 sub-steps 則後退一個 sub-step）"""
-        if not self.has_substeps or not self.show_substeps:
-            # 沒有 sub-steps 或關閉 sub-step 顯示：直接後退一個 step
+        """Go back one step (or one sub-step if enabled)"""
+        if not self.show_substeps:
+            # Sub-step display disabled: go back whole step
             if self.current_step == 0:
                 self.current_step = -1
             else:
                 self.current_step = max(self.current_step - 1, 0)
             self.current_substep = -1
         else:
-            # 有 sub-steps：逐個 sub-step 後退
+            # Sub-step mode enabled (either real or simulated)
             if self.current_substep > -1:
-                # 還可以在當前 step 內後退
+                # Can still go back within current step
                 self.current_substep -= 1
             elif self.current_step > 0:
-                # 回到上一個 step 的最後一個 sub-step
+                # Go back to last substep of previous step
                 self.current_step -= 1
                 step_data = self.replay_data['steps'][self.current_step]
-                num_substeps = len(step_data.get('sub_steps', []))
+
+                # Get number of substeps (real or simulated)
+                if 'sub_steps' in step_data:
+                    num_substeps = len(step_data['sub_steps'])
+                else:
+                    # Simulate: number of robots
+                    num_substeps = self.replay_data['config'].get('num_robots', 4)
+
                 self.current_substep = num_substeps - 1
             elif self.current_step == 0:
-                # 回到初始狀態
+                # Go back to initial state
                 self.current_step = -1
                 self.current_substep = -1
 
@@ -360,34 +575,77 @@ class ReplayVisualizer:
         # Clear screen
         self.screen.fill(self.COLORS['background'])
 
-        # Draw grid
+        # Compute helper flag used by ghost trail and info panel below
+        _cur_step_has_substeps = (
+            self.current_step >= 0 and
+            'sub_steps' in self.replay_data['steps'][self.current_step] and
+            bool(self.replay_data['steps'][self.current_step]['sub_steps'])
+        )
+        grid_y_offset = 0
+
+        # Draw grid (with offset if banner is shown)
         for i in range(grid_size + 1):
             # Horizontal lines
-            y = i * self.cell_size
+            y = i * self.cell_size + grid_y_offset
             pygame.draw.line(self.screen, self.COLORS['grid'], (0, y), (grid_size * self.cell_size, y))
             # Vertical lines
             x = i * self.cell_size
-            pygame.draw.line(self.screen, self.COLORS['grid'], (x, 0), (x, grid_size * self.cell_size))
+            pygame.draw.line(self.screen, self.COLORS['grid'], (x, grid_y_offset), (x, grid_size * self.cell_size + grid_y_offset))
 
-        # Draw charger positions
-        for charger_pos in config['charger_positions']:
-            cy, cx = charger_pos
-            rect = pygame.Rect(
-                cx * self.cell_size + 5,
-                cy * self.cell_size + 5,
-                self.cell_size - 10,
-                self.cell_size - 10
-            )
-            pygame.draw.rect(self.screen, self.COLORS['charger'], rect, 3)
-            # Draw "C" label
-            label = self.font_small.render("C", True, self.COLORS['charger'])
-            self.screen.blit(label, (cx * self.cell_size + 8, cy * self.cell_size + 8))
-
-        # Draw current step/substep
         # Get robot positions and determine which actions to show
         current_step_data, action_step_data, show_actions, current_robot_id = self._get_display_state(config)
 
-        # Draw robots
+        # Draw dust visualization (if available)
+        if 'dust_grid' in current_step_data:
+            self._draw_dust_grid(current_step_data['dust_grid'], grid_size, grid_y_offset)
+
+        # Draw charger positions (with offset) - 3x3 charging area with yellow outlines
+        for charger_pos in config['charger_positions']:
+            cy, cx = charger_pos
+
+            # Draw 3x3 yellow outline circles for charging area
+            for dy in range(-1, 2):  # -1, 0, 1
+                for dx in range(-1, 2):
+                    cell_y = cy + dy
+                    cell_x = cx + dx
+                    # Check if cell is within grid bounds
+                    if 0 <= cell_y < grid_size and 0 <= cell_x < grid_size:
+                        # Draw yellow circle outline (similar to charger center)
+                        if dy == 0 and dx == 0:
+                            # Center: thicker outline with "C" label
+                            center_rect = pygame.Rect(
+                                cell_x * self.cell_size + 5,
+                                cell_y * self.cell_size + 5 + grid_y_offset,
+                                self.cell_size - 10,
+                                self.cell_size - 10
+                            )
+                            pygame.draw.rect(self.screen, self.COLORS['charger'], center_rect, 3)
+                            # Draw "C" label
+                            label = self.font_small.render("C", True, self.COLORS['charger'])
+                            self.screen.blit(label, (cell_x * self.cell_size + 8, cell_y * self.cell_size + 8 + grid_y_offset))
+                        else:
+                            # Surrounding cells: thinner yellow outline
+                            rect = pygame.Rect(
+                                cell_x * self.cell_size + 5,
+                                cell_y * self.cell_size + 5 + grid_y_offset,
+                                self.cell_size - 10,
+                                self.cell_size - 10
+                            )
+                            pygame.draw.rect(self.screen, self.COLORS['charger'], rect, 2)
+
+        # 获取上一个 substep 的位置（用于显示移动轨迹）
+        previous_positions = {}
+        if self.show_substeps and _cur_step_has_substeps and self.current_substep >= 0:
+            step = self.replay_data['steps'][self.current_step]
+            if True:
+                # 当前显示的是某个 substep 完成后的状态
+                substep_idx = min(self.current_substep, len(step['sub_steps']) - 1)
+                current_ss = step['sub_steps'][substep_idx]
+                # 获取这个 substep 的 before 状态作为上一个位置
+                for rid, rinfo in current_ss['robots_before'].items():
+                    previous_positions[rid] = rinfo['position']
+
+        # Draw robots with ghost/trail effect
         num_robots = config.get('num_robots', 4)
         for i in range(num_robots):
             agent_id = f'robot_{i}'
@@ -398,9 +656,57 @@ class ReplayVisualizer:
                 rx, ry = robot_state['position']  # position is [x, y] = [col, row]
                 color = self.robot_colors.get(agent_id, (128, 128, 128))
 
+                # 如果有上一个位置且不同于当前位置，绘制移动轨迹
+                if agent_id in previous_positions:
+                    prev_pos = previous_positions[agent_id]
+                    if prev_pos != [rx, ry]:
+                        prev_x, prev_y = prev_pos
+                        prev_center_x = prev_x * self.cell_size + self.cell_size // 2
+                        prev_center_y = prev_y * self.cell_size + self.cell_size // 2 + grid_y_offset
+
+                        # 1. 绘制半透明的"残影"
+                        ghost_surface = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+                        ghost_color = (*color, 120)  # 增加不透明度從 80 到 120
+                        pygame.draw.circle(ghost_surface, ghost_color,
+                                         (self.cell_size // 2, self.cell_size // 2),
+                                         self.cell_size // 3)
+                        self.screen.blit(ghost_surface,
+                                       (prev_x * self.cell_size, prev_y * self.cell_size + grid_y_offset))
+
+                        # 2. 繪製移動軌跡線（從舊位置到新位置）
+                        curr_center_x = rx * self.cell_size + self.cell_size // 2
+                        curr_center_y = ry * self.cell_size + self.cell_size // 2 + grid_y_offset
+                        # 繪製虛線軌跡
+                        line_color = (*color, 200)  # 半透明的顏色
+                        pygame.draw.line(self.screen, color,
+                                       (prev_center_x, prev_center_y),
+                                       (curr_center_x, curr_center_y), 4)
+
+                        # 3. 在軌跡線上繪製箭頭
+                        # 計算方向向量
+                        dx = curr_center_x - prev_center_x
+                        dy = curr_center_y - prev_center_y
+                        length = (dx**2 + dy**2)**0.5
+                        if length > 0:
+                            # 標準化方向向量
+                            dx_norm = dx / length
+                            dy_norm = dy / length
+                            # 箭頭位置在線段的 70% 處
+                            arrow_x = prev_center_x + dx * 0.7
+                            arrow_y = prev_center_y + dy * 0.7
+                            # 箭頭大小
+                            arrow_size = 12
+                            # 箭頭的三個點
+                            arrow_tip = (arrow_x + dx_norm * arrow_size, arrow_y + dy_norm * arrow_size)
+                            arrow_left = (arrow_x - dy_norm * arrow_size//2 - dx_norm * arrow_size//2,
+                                        arrow_y + dx_norm * arrow_size//2 - dy_norm * arrow_size//2)
+                            arrow_right = (arrow_x + dy_norm * arrow_size//2 - dx_norm * arrow_size//2,
+                                         arrow_y - dx_norm * arrow_size//2 - dy_norm * arrow_size//2)
+                            pygame.draw.polygon(self.screen, color, [arrow_tip, arrow_left, arrow_right])
+
                 # Draw robot circle
                 center_x = rx * self.cell_size + self.cell_size // 2
-                center_y = ry * self.cell_size + self.cell_size // 2
+                center_y = ry * self.cell_size + self.cell_size // 2 + grid_y_offset
 
                 # 如果是當前行動的 robot，畫一個高亮外框
                 if current_robot_id is not None and agent_id == f'robot_{current_robot_id}':
@@ -457,22 +763,50 @@ class ReplayVisualizer:
         small_line_height = 16
 
         # Title (show step and substep info)
+        subtitle = None
         if self.current_step == -1:
             title = self.font_large.render(f"Initial State", True, self.COLORS['text'])
-        elif self.has_substeps and self.show_substeps:
-            if self.current_substep == -1:
-                title = self.font_large.render(f"Step {self.current_step} (before)", True, self.COLORS['text'])
-            else:
-                title = self.font_large.render(f"Step {self.current_step}.{self.current_substep}", True, self.COLORS['text'])
         else:
-            title = self.font_large.render(f"Step {self.current_step}", True, self.COLORS['text'])
+            step = self.replay_data['steps'][self.current_step]
+            step_has_ss = 'sub_steps' in step and bool(step['sub_steps'])
+            if self.show_substeps and step_has_ss:
+                if self.current_substep == -1:
+                    first_ss = step['sub_steps'][0]
+                    title = self.font_large.render(f"Step {self.current_step} (Ready)", True, self.COLORS['text'])
+                    subtitle = self.font_small.render(
+                        f"Next: robot_{first_ss['robot_id']} will act", True, (150, 0, 0))
+                else:
+                    ss_idx = min(self.current_substep, len(step['sub_steps']) - 1)
+                    cur_ss = step['sub_steps'][ss_idx]
+                    title = self.font_large.render(
+                        f"Step {self.current_step}.{self.current_substep}", True, self.COLORS['text'])
+                    subtitle = self.font_small.render(
+                        f"Done: robot_{cur_ss['robot_id']} did {cur_ss['action']}", True, (0, 150, 0))
+            else:
+                title = self.font_large.render(f"Step {self.current_step}", True, self.COLORS['text'])
+
         self.screen.blit(title, (panel_x, y_offset))
-        y_offset += line_height + 5
+        y_offset += line_height
+        if subtitle:
+            self.screen.blit(subtitle, (panel_x, y_offset))
+            y_offset += line_height
+        y_offset += 5
 
         # Sub-step mode indicator
-        if self.has_substeps:
-            substep_mode = "ON" if self.show_substeps else "OFF"
-            substep_label = self.font_small.render(f"Sub-steps: {substep_mode} (press S)", True, (100, 100, 100))
+        if self.show_substeps:
+            if self.current_step >= 0:
+                step = self.replay_data['steps'][self.current_step]
+                if 'sub_steps' in step and step['sub_steps']:
+                    num_substeps = len(step['sub_steps'])
+                    substep_label = self.font_small.render(
+                        f"Mode: ONE-BY-ONE (press S to toggle)", True, (0, 150, 0))
+                    hint_text = f"  -> {self.current_substep + 1}/{num_substeps} substeps done"
+                    hint_label = self.font_small.render(hint_text, True, (150, 0, 0))
+                    self.screen.blit(substep_label, (panel_x, y_offset))
+                    self.screen.blit(hint_label, (panel_x, y_offset + line_height))
+                    y_offset += line_height * 2
+        else:
+            substep_label = self.font_small.render(f"Mode: ALL-AT-ONCE (press S to toggle)", True, (150, 150, 150))
             self.screen.blit(substep_label, (panel_x, y_offset))
             y_offset += line_height
 
@@ -484,7 +818,7 @@ class ReplayVisualizer:
         y_offset += line_height
 
         # Speed
-        speed_label = self.font_small.render(f"Speed: {self.speed:.1f}x", True, self.COLORS['text'])
+        speed_label = self.font_small.render(f"Speed: {self.speed:.1f} substeps/sec", True, self.COLORS['text'])
         self.screen.blit(speed_label, (panel_x, y_offset))
         y_offset += line_height + 10
 
@@ -492,8 +826,10 @@ class ReplayVisualizer:
         # Show Q-values and actions from action_step_data if available
         if action_step_data:
             q_values = action_step_data.get('q_values', {})
+            rewards = action_step_data.get('rewards', {})
         else:
             q_values = {}
+            rewards = {}
 
         for agent_id in ['robot_0', 'robot_1', 'robot_2', 'robot_3']:
             if agent_id in step_data['robots']:
@@ -512,7 +848,7 @@ class ReplayVisualizer:
 
                 # Robot label with color
                 robot_label = self.font_small.render(
-                    f"{agent_id}: Pos({pos_x},{pos_y}) E:{energy:3d} {alive}",
+                    f"{agent_id}: Pos({pos_x},{pos_y}) E:{energy:3.0f} {alive}",
                     True, color
                 )
                 self.screen.blit(robot_label, (panel_x, y_offset))
@@ -533,7 +869,35 @@ class ReplayVisualizer:
                     self.screen.blit(q_label, (panel_x, y_offset))
                     y_offset += small_line_height
 
+                # Reward for this robot (if available)
+                if agent_id in rewards:
+                    reward_val = rewards[agent_id]
+                    reward_text = f"  R: {reward_val:+7.2f}"
+                    reward_label = self.font_small.render(reward_text, True, color)
+                    self.screen.blit(reward_label, (panel_x, y_offset))
+                    y_offset += small_line_height
+
                 y_offset += 5
+
+        # Controls hint at the bottom
+        y_offset += 10
+        controls_title = self.font_small.render("Controls:", True, (200, 200, 200))
+        self.screen.blit(controls_title, (panel_x, y_offset))
+        y_offset += small_line_height
+
+        controls = [
+            "SPACE: Play/Pause",
+            "RIGHT/LEFT: Next/Prev",
+            "UP/DOWN: Speed +/-",
+            "S: Toggle substeps",
+            "R: Reset",
+            "Q: Quit"
+        ]
+
+        for control in controls:
+            control_label = self.font_small.render(control, True, (150, 150, 150))
+            self.screen.blit(control_label, (panel_x, y_offset))
+            y_offset += small_line_height - 2
 
     def _draw_events(self, step_data: Dict):
         """Draw event notifications for this step"""
@@ -568,6 +932,46 @@ class ReplayVisualizer:
             label = self.font_small.render(text, True, color)
             self.screen.blit(label, (x_pos, y_pos))
             x_pos += label.get_width() + 30
+
+    def _draw_dust_grid(self, dust_grid: List[List[float]], grid_size: int, grid_y_offset: int):
+        """Draw dust accumulation visualization on grid cells"""
+        if not dust_grid:
+            return
+
+        # Find max dust value for normalization (assuming max is around 0.25-1.0)
+        max_dust = 0.25  # Default maximum for normalization
+        for row in dust_grid:
+            for dust_val in row:
+                max_dust = max(max_dust, dust_val)
+
+        # Draw dust overlay on each cell
+        for y in range(grid_size):
+            for x in range(grid_size):
+                if y < len(dust_grid) and x < len(dust_grid[y]):
+                    dust_val = dust_grid[y][x]
+
+                    # Calculate opacity based on dust amount (0 = transparent, max_dust = opaque)
+                    # Use brown/dirt color with varying opacity
+                    opacity = min(200, int((dust_val / max_dust) * 200))
+
+                    if opacity > 5:  # Only draw if there's noticeable dust
+                        # Create semi-transparent surface for dust overlay
+                        dust_surface = pygame.Surface((self.cell_size - 2, self.cell_size - 2), pygame.SRCALPHA)
+                        # Brown/dirt color (139, 90, 43) with calculated opacity
+                        dust_color = (139, 90, 43, opacity)
+                        dust_surface.fill(dust_color)
+
+                        # Blit dust overlay onto cell
+                        self.screen.blit(dust_surface,
+                                       (x * self.cell_size + 1,
+                                        y * self.cell_size + 1 + grid_y_offset))
+
+                        # Draw dust value text (small, in corner)
+                        dust_text = f"{dust_val:.4f}"
+                        text_surface = self.font_small.render(dust_text, True, (255, 255, 255))
+                        text_rect = text_surface.get_rect()
+                        text_rect.topleft = (x * self.cell_size + 3, y * self.cell_size + 3 + grid_y_offset)
+                        self.screen.blit(text_surface, text_rect)
 
     def _draw_action_arrow(self, center_x, center_y, action, color):
         """Draw an arrow showing the action direction"""
@@ -636,9 +1040,8 @@ class ReplayVisualizer:
         else:
             play_label = 'PAUSE'
         
-        # Speed display (steps per second)
-        steps_per_sec = self.speed * 60
-        speed_label = f'SPD:{steps_per_sec:.2f}'
+        # Speed display (substeps per second)
+        speed_label = f'SPD:{self.speed:.1f}'
         
         # Recording label
         rec_label = 'STOP REC' if self.is_recording else 'RECORD'
@@ -707,18 +1110,14 @@ class ReplayVisualizer:
         print("Reset to initial state")
     
     def _slower(self):
-        # Decrease speed (min 0.25 steps/sec = 0.25/60 per frame)
-        steps_per_sec = self.speed * 60
-        steps_per_sec = max(0.25, steps_per_sec - 0.25)
-        self.speed = steps_per_sec / 60.0
-        print(f"Speed: {steps_per_sec:.2f} steps/sec")
-    
+        # Decrease speed (min 0.5 substeps/sec)
+        self.speed = max(0.5, self.speed - 1.0)
+        print(f"Speed: {self.speed:.1f} substeps/sec")
+
     def _faster(self):
-        # Increase speed (max 4 steps/sec = 4/60 per frame)
-        steps_per_sec = self.speed * 60
-        steps_per_sec = min(4.0, steps_per_sec + 0.25)
-        self.speed = steps_per_sec / 60.0
-        print(f"Speed: {steps_per_sec:.2f} steps/sec")
+        # Increase speed (max 30 substeps/sec)
+        self.speed = min(30.0, self.speed + 1.0)
+        print(f"Speed: {self.speed:.1f} substeps/sec")
     
     def _toggle_recording(self):
         if self.is_recording:
@@ -799,8 +1198,8 @@ Controls:
 
     parser.add_argument("--replay-file", type=str, required=True,
                        help="Path to JSON replay file")
-    parser.add_argument("--speed", type=float, default=1.0,
-                       help="Initial playback speed (default: 1.0)")
+    parser.add_argument("--speed", type=float, default=8.0,
+                       help="Initial playback speed in substeps/sec (default: 8.0)")
     parser.add_argument("--cell-size", type=int, default=60,
                        help="Size of grid cells in pixels (default: 60)")
 

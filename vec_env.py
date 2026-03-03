@@ -4,6 +4,7 @@ Vectorized Environment for Multi-Robot Vacuum RL
 """
 
 import numpy as np
+import multiprocessing as mp
 from typing import Dict, List, Tuple, Any
 from gym import RobotVacuumGymEnv
 
@@ -150,20 +151,6 @@ class VectorizedRobotVacuumEnv:
         np.ndarray,  # truncated: (num_envs,) bool - always False before advance_step
         List[Dict]   # infos: list of info dicts
     ]:
-        """
-        對指定 robot 執行動作（所有環境並行）
-
-        Args:
-            robot_id: 機器人 ID (0 到 n_agents-1)
-            actions: shape (num_envs,) 的動作 array
-
-        Returns:
-            observations: 該 robot 執行動作後的觀測
-            rewards: 該 robot 的獎勵
-            terminated: 該 robot 是否死亡
-            truncated: 是否達到最大步數（在 advance_step 之前總是 False）
-            infos: 所有環境的 info
-        """
         all_infos = []
 
         for env_idx, env in enumerate(self.envs):
@@ -186,13 +173,6 @@ class VectorizedRobotVacuumEnv:
         )
 
     def advance_step(self) -> Tuple[np.ndarray, List[int]]:
-        """
-        所有 robot 都行動完後，推進回合計數（所有環境）
-
-        Returns:
-            done_mask: shape (num_envs,) 表示哪些環境達到 max steps
-            done_envs: 已完成 episode 的環境索引列表
-        """
         done_envs = []
         done_mask = np.zeros(self.num_envs, dtype=bool)
 
@@ -200,7 +180,6 @@ class VectorizedRobotVacuumEnv:
             max_steps_reached, truncations = env.advance_step()
             done_mask[env_idx] = max_steps_reached
 
-            # 檢查 episode 是否結束（全死或達到 max steps）
             alive_count = sum(1 for agent_id in self.agent_ids
                             if not self._terms_buffer[env_idx, self.agent_ids.index(agent_id)])
             should_end = alive_count == 0 or max_steps_reached
@@ -208,11 +187,197 @@ class VectorizedRobotVacuumEnv:
             if should_end:
                 done_envs.append(env_idx)
                 self.episode_counts[env_idx] += 1
-                # Auto-reset
                 reset_obs_dict, _ = env.reset()
                 for agent_idx, agent_id in enumerate(self.agent_ids):
                     self._obs_buffer[env_idx, agent_idx] = reset_obs_dict[agent_id]
-                # 重置 termination buffer
                 self._terms_buffer[env_idx, :] = False
 
         return done_mask, done_envs
+
+
+# ---------------------------------------------------------------------------
+# Subprocess worker + SubprocVecEnv
+# ---------------------------------------------------------------------------
+
+def _env_worker(pipe: mp.connection.Connection, env_kwargs: Dict, num_local_envs: int):
+    """
+    Worker process: 持有一個 mini VectorizedRobotVacuumEnv，
+    透過 Pipe 接收指令並回傳結果。
+    在 Linux 上用 fork context 啟動，不需重新 import。
+    """
+    local_env = VectorizedRobotVacuumEnv(num_local_envs, env_kwargs)
+    while True:
+        try:
+            cmd, data = pipe.recv()
+        except EOFError:
+            break
+
+        if cmd == 'reset':
+            obs_arr, infos = local_env.reset()
+            pipe.send((obs_arr, infos))
+        elif cmd == 'get_obs':
+            robot_id = data
+            obs = local_env.get_observation(robot_id)
+            pipe.send(obs)
+        elif cmd == 'step_single':
+            robot_id, actions = data
+            result = local_env.step_single(robot_id, actions)
+            pipe.send(result)
+        elif cmd == 'advance_step':
+            result = local_env.advance_step()
+            pipe.send(result)
+        elif cmd == 'close':
+            break
+
+
+class SubprocVecEnv:
+    """
+    Multiprocessing 版 VectorizedRobotVacuumEnv。
+
+    開 num_workers 個 subprocess，每個負責 num_envs // num_workers 個 env。
+    介面與 VectorizedRobotVacuumEnv 完全相同，train_dqn_vec.py 不需修改。
+
+    用法（透過 --num-workers 傳入）：
+        SubprocVecEnv(num_envs=32, env_kwargs=..., num_workers=8)
+        → 8 個 process 各跑 4 個 env，同時執行，加速約 4-8x
+    """
+
+    def __init__(self, num_envs: int, env_kwargs: Dict[str, Any], num_workers: int):
+        assert num_envs >= num_workers, \
+            f"num_envs ({num_envs}) 必須 >= num_workers ({num_workers})"
+
+        self.num_envs = num_envs
+        self.num_workers = num_workers
+
+        # 把 num_envs 均分給 num_workers（餘數給前幾個 worker）
+        base = num_envs // num_workers
+        rem  = num_envs % num_workers
+        self.worker_sizes   = [base + (1 if i < rem else 0) for i in range(num_workers)]
+        self.worker_offsets = [sum(self.worker_sizes[:i])   for i in range(num_workers)]
+
+        # 建一個暫時 env 取 space / agent_ids（在 fork 前，CUDA 初始化前）
+        _tmp = RobotVacuumGymEnv(**env_kwargs)
+        self.observation_space = _tmp.observation_space
+        self.action_space      = _tmp.action_space
+        self.agent_ids         = _tmp.agent_ids
+        self.n_agents          = len(self.agent_ids)
+        del _tmp
+
+        # Fork worker processes（Linux fork：不需重新 import，比 spawn 快）
+        ctx = mp.get_context('fork')
+        self._pipes = []
+        self._procs = []
+        for i in range(num_workers):
+            parent_conn, child_conn = ctx.Pipe(duplex=True)
+            proc = ctx.Process(
+                target=_env_worker,
+                args=(child_conn, env_kwargs, self.worker_sizes[i]),
+                daemon=True,
+            )
+            proc.start()
+            child_conn.close()   # parent 不需要 child 端
+            self._pipes.append(parent_conn)
+            self._procs.append(proc)
+
+        # Pre-allocate buffers（和 VectorizedRobotVacuumEnv 相同）
+        obs_dim = self.observation_space.shape[0]
+        self._obs_buffer     = np.zeros((num_envs, self.n_agents, obs_dim), dtype=np.float32)
+        self._rewards_buffer = np.zeros((num_envs, self.n_agents), dtype=np.float32)
+        self._terms_buffer   = np.zeros((num_envs, self.n_agents), dtype=bool)
+        self._truncs_buffer  = np.zeros((num_envs, self.n_agents), dtype=bool)
+        self.episode_counts  = np.zeros(num_envs, dtype=np.int32)
+
+        print(f"[SubprocVecEnv] {num_workers} workers × "
+              f"{self.worker_sizes[0]} envs = {num_envs} total envs")
+
+    # ------------------------------------------------------------------
+    # Public interface（與 VectorizedRobotVacuumEnv 完全相同）
+    # ------------------------------------------------------------------
+
+    def reset(self) -> Tuple[np.ndarray, List[Dict]]:
+        for pipe in self._pipes:
+            pipe.send(('reset', None))
+
+        all_infos = []
+        for w, pipe in enumerate(self._pipes):
+            obs_arr, infos = pipe.recv()          # (n_local, n_agents, obs_dim)
+            off, n = self.worker_offsets[w], self.worker_sizes[w]
+            self._obs_buffer[off:off+n] = obs_arr
+            all_infos.extend(infos)
+
+        self.episode_counts[:] = 0
+        return self._obs_buffer.copy(), all_infos
+
+    def get_observation(self, robot_id: int) -> np.ndarray:
+        for pipe in self._pipes:
+            pipe.send(('get_obs', robot_id))
+
+        for w, pipe in enumerate(self._pipes):
+            obs_slice = pipe.recv()               # (n_local, obs_dim)
+            off, n = self.worker_offsets[w], self.worker_sizes[w]
+            self._obs_buffer[off:off+n, robot_id] = obs_slice
+
+        return self._obs_buffer[:, robot_id].copy()
+
+    def step_single(self, robot_id: int, actions: np.ndarray) -> Tuple[
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[Dict]
+    ]:
+        # 同時廣播給所有 worker
+        for w, pipe in enumerate(self._pipes):
+            off, n = self.worker_offsets[w], self.worker_sizes[w]
+            pipe.send(('step_single', (robot_id, actions[off:off+n])))
+
+        # 收集結果（workers 已在並行跑）
+        all_infos = []
+        for w, pipe in enumerate(self._pipes):
+            next_obs, rewards, terminated, truncated, infos = pipe.recv()
+            off, n = self.worker_offsets[w], self.worker_sizes[w]
+            self._obs_buffer[off:off+n,     robot_id] = next_obs
+            self._rewards_buffer[off:off+n, robot_id] = rewards
+            self._terms_buffer[off:off+n,   robot_id] = terminated
+            self._truncs_buffer[off:off+n,  robot_id] = truncated
+            all_infos.extend(infos)
+
+        return (
+            self._obs_buffer[:,     robot_id].copy(),
+            self._rewards_buffer[:, robot_id].copy(),
+            self._terms_buffer[:,   robot_id].copy(),
+            self._truncs_buffer[:,  robot_id].copy(),
+            all_infos,
+        )
+
+    def advance_step(self) -> Tuple[np.ndarray, List[int]]:
+        for pipe in self._pipes:
+            pipe.send(('advance_step', None))
+
+        done_mask = np.zeros(self.num_envs, dtype=bool)
+        done_envs: List[int] = []
+
+        for w, pipe in enumerate(self._pipes):
+            local_mask, local_done = pipe.recv()   # local_done: list of local indices
+            off, n = self.worker_offsets[w], self.worker_sizes[w]
+            done_mask[off:off+n] = local_mask
+            for local_idx in local_done:
+                global_idx = off + local_idx
+                done_envs.append(global_idx)
+                self.episode_counts[global_idx] += 1
+                self._terms_buffer[global_idx, :] = False   # 重置已 auto-reset 的 env
+
+        return done_mask, done_envs
+
+    def get_episode_counts(self) -> np.ndarray:
+        return self.episode_counts.copy()
+
+    def get_total_episodes(self) -> int:
+        return int(self.episode_counts.sum())
+
+    def close(self):
+        for pipe in self._pipes:
+            try:
+                pipe.send(('close', None))
+            except Exception:
+                pass
+        for proc in self._procs:
+            proc.join(timeout=5)
+            if proc.is_alive():
+                proc.terminate()

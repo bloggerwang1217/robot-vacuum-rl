@@ -13,7 +13,7 @@ from typing import Dict, List, Tuple
 
 # Import the DQN network and agent components
 from dqn import DQN, init_weights
-from train_dqn import IndependentDQNAgent
+from legacy.train_dqn import IndependentDQNAgent
 
 # Import the Gym-wrapped environment
 from gym import RobotVacuumGymEnv
@@ -59,6 +59,14 @@ class ModelEvaluator:
         robot_energies = all_robot_energies[:self.num_robots]
         self.robot_energies = robot_energies
 
+        all_robot_speeds = [
+            args.robot_0_speed,
+            args.robot_1_speed,
+            args.robot_2_speed,
+            args.robot_3_speed,
+        ]
+        robot_speeds = all_robot_speeds[:self.num_robots]
+
         # Parse charger positions if provided
         charger_positions = None
         if args.charger_positions is not None:
@@ -94,6 +102,12 @@ class ModelEvaluator:
             charger_dust_max_ratio=args.charger_dust_max_ratio,
             charger_dust_rate_ratio=args.charger_dust_rate_ratio,
             dust_reward_scale=args.dust_reward_scale,
+            dust_enabled=not args.no_dust,
+            exclusive_charging=args.exclusive_charging,
+            robot_speeds=robot_speeds,
+            random_start_robots=set(
+                int(x) for x in getattr(args, 'random_start_robots', '').split(',') if x.strip()
+            ),
         )
 
         # Initialize agents (only for the robots that exist)
@@ -122,6 +136,24 @@ class ModelEvaluator:
                 device=self.device,
                 args=dummy_args
             )
+
+        # Scripted robots: always play STAY during eval
+        scripted_str = getattr(args, 'scripted_robots', '')
+        self.scripted_robots = set(int(x) for x in scripted_str.split(',') if x.strip()) if scripted_str else set()
+
+        random_str = getattr(args, 'random_robots', '')
+        self.random_robots = set(int(x) for x in random_str.split(',') if x.strip()) if random_str else set()
+
+        safe_random_str = getattr(args, 'safe_random_robots', '')
+        self.safe_random_robots = set(int(x) for x in safe_random_str.split(',') if x.strip()) if safe_random_str else set()
+
+        flee_str = getattr(args, 'flee_robots', '')
+        self.flee_robots = set(int(x) for x in flee_str.split(',') if x.strip()) if flee_str else set()
+
+        for label, s in [('STAY', self.scripted_robots), ('RANDOM', self.random_robots),
+                         ('SAFE_RANDOM', self.safe_random_robots), ('FLEE', self.flee_robots)]:
+            if s:
+                print(f"  robots [{sorted(s)}] → {label} during eval")
 
         # Load models
         self.load_models(args.model_dir)
@@ -191,72 +223,115 @@ class ModelEvaluator:
             step_q_values = {}  # Store Q-values for this step
             step_substeps = []  # 這個 step 的所有 sub-steps
 
+            robot_speeds = self.env.env.robot_speeds
             for robot_id in range(self.num_robots):
                 agent_id = self.agent_ids[robot_id]
                 agent = self.agents[agent_id]
+                n_turns = robot_speeds[robot_id]
+                is_scripted     = robot_id in self.scripted_robots
+                is_random       = robot_id in self.random_robots
+                is_safe_random  = robot_id in self.safe_random_robots
+                is_flee         = robot_id in self.flee_robots
 
-                # 記錄行動前的狀態
-                state_before = self.env.env.get_global_state()
-                robots_before = {
-                    f"robot_{i}": {
-                        "position": [state_before['robots'][i]['x'], state_before['robots'][i]['y']],
-                        "energy": state_before['robots'][i]['energy'],
-                        "is_dead": not state_before['robots'][i]['is_active']
+                for turn in range(n_turns):
+                    # 記錄行動前的狀態
+                    state_before = self.env.env.get_global_state()
+                    robots_before = {
+                        f"robot_{i}": {
+                            "position": [state_before['robots'][i]['x'], state_before['robots'][i]['y']],
+                            "energy": state_before['robots'][i]['energy'],
+                            "is_dead": not state_before['robots'][i]['is_active']
+                        }
+                        for i in range(self.num_robots)
                     }
-                    for i in range(self.num_robots)
-                }
 
-                # 1. Get current observation (latest state)
-                obs = self.env.get_observation(robot_id)
+                    # 1. Get current observation (latest state)
+                    obs = self.env.get_observation(robot_id)
+                    turn_label = f"t{turn+1}/{n_turns}" if n_turns > 1 else ""
 
-                # 2. Select action with Q-values
-                action, q_values = agent.select_action(obs, eval_mode=True, return_q_values=True)
-                actions.append(action)
+                    if is_scripted:
+                        action = 4  # STAY
+                        q_values = np.zeros(5, dtype=np.float32)
+                        agent_q_values = {action_names[i]: 0.0 for i in range(len(action_names))}
+                        print(f"  {agent_id}{turn_label} [STAY] Selected: STAY")
+                    elif is_random:
+                        action = np.random.randint(0, 5)
+                        q_values = np.zeros(5, dtype=np.float32)
+                        agent_q_values = {action_names[i]: 0.0 for i in range(len(action_names))}
+                        print(f"  {agent_id}{turn_label} [RANDOM] Selected: {action_names[action]}")
+                    elif is_safe_random:
+                        n = self.env.n
+                        rx = round(obs[0] * (n - 1)); ry = round(obs[1] * (n - 1))
+                        valid = [4]
+                        if ry > 0:     valid.append(0)
+                        if ry < n - 1: valid.append(1)
+                        if rx > 0:     valid.append(2)
+                        if rx < n - 1: valid.append(3)
+                        action = int(np.random.choice(valid))
+                        q_values = np.zeros(5, dtype=np.float32)
+                        agent_q_values = {action_names[i]: 0.0 for i in range(len(action_names))}
+                        print(f"  {agent_id}{turn_label} [SAFE_RANDOM] Selected: {action_names[action]}")
+                    elif is_flee:
+                        dx = obs[7]; dy = obs[8]
+                        wall_up, wall_down, wall_left, wall_right = obs[3], obs[4], obs[5], obs[6]
+                        blocked = {0: wall_up, 1: wall_down, 2: wall_left, 3: wall_right}
+                        h_pref = 2 if dx > 0 else (3 if dx < 0 else 4)
+                        v_pref = 0 if dy > 0 else (1 if dy < 0 else 4)
+                        primary, fallback = (h_pref, v_pref) if abs(dx) >= abs(dy) else (v_pref, h_pref)
+                        if primary != 4 and blocked[primary] < 0.5:
+                            action = primary
+                        elif fallback != 4 and blocked[fallback] < 0.5:
+                            action = fallback
+                        else:
+                            action = 4
+                        q_values = np.zeros(5, dtype=np.float32)
+                        agent_q_values = {action_names[i]: 0.0 for i in range(len(action_names))}
+                        print(f"  {agent_id}{turn_label} [FLEE] Selected: {action_names[action]}")
+                    else:
+                        # Normal Q-network
+                        action, q_values = agent.select_action(obs, eval_mode=True, return_q_values=True)
+                        agent_q_values = {action_names[i]: float(q_values[i]) for i in range(len(action_names))}
+                        q_str = ", ".join([f"{action_names[i]}:{q_values[i]:.3f}" for i in range(len(action_names))])
+                        print(f"  {agent_id}{turn_label} Q-values: [{q_str}] Selected: {action_names[action]}")
 
-                # Store Q-values
-                agent_q_values = {
-                    action_names[i]: float(q_values[i])
-                    for i in range(len(action_names))
-                }
-                step_q_values[agent_id] = agent_q_values
+                    if turn == n_turns - 1:
+                        actions.append(action)  # 只記錄最後一個 turn 的 action
+                        step_q_values[agent_id] = agent_q_values
 
-                # Print Q-values for this step (debug output)
-                q_str = ", ".join([f"{action_names[i]}:{q_values[i]:.3f}" for i in range(len(action_names))])
-                print(f"  {agent_id} Q-values: [{q_str}] Selected: {action_names[action]}")
+                    # 3. Execute action
+                    next_obs, reward, terminated, truncated, info = self.env.step_single(robot_id, action)
 
-                # 3. Execute action
-                next_obs, reward, terminated, truncated, info = self.env.step_single(robot_id, action)
-
-                # 記錄行動後的狀態
-                state_after = self.env.env.get_global_state()
-                robots_after = {
-                    f"robot_{i}": {
-                        "position": [state_after['robots'][i]['x'], state_after['robots'][i]['y']],
-                        "energy": state_after['robots'][i]['energy'],
-                        "is_dead": not state_after['robots'][i]['is_active']
+                    # 記錄行動後的狀態
+                    state_after = self.env.env.get_global_state()
+                    robots_after = {
+                        f"robot_{i}": {
+                            "position": [state_after['robots'][i]['x'], state_after['robots'][i]['y']],
+                            "energy": state_after['robots'][i]['energy'],
+                            "is_dead": not state_after['robots'][i]['is_active']
+                        }
+                        for i in range(self.num_robots)
                     }
-                    for i in range(self.num_robots)
-                }
 
-                # 記錄這個 sub-step
-                substep_data = {
-                    "robot_id": robot_id,
-                    "agent_id": agent_id,
-                    "action": action_names[action],
-                    "q_values": agent_q_values,
-                    "robots_before": robots_before,
-                    "robots_after": robots_after,
-                    "reward": reward,
-                    "terminated": terminated
-                }
-                step_substeps.append(substep_data)
+                    # 記錄這個 sub-step
+                    substep_data = {
+                        "robot_id": robot_id,
+                        "agent_id": agent_id,
+                        "turn": turn,
+                        "action": action_names[action],
+                        "q_values": agent_q_values,
+                        "robots_before": robots_before,
+                        "robots_after": robots_after,
+                        "reward": reward,
+                        "terminated": terminated
+                    }
+                    step_substeps.append(substep_data)
 
-                # Accumulate rewards
-                episode_rewards[agent_id] += reward
+                    # Accumulate rewards
+                    episode_rewards[agent_id] += reward
 
-                # Update termination status
-                if terminated:
-                    terminations[agent_id] = True
+                    # Update termination status
+                    if terminated:
+                        terminations[agent_id] = True
 
             # 4. Advance step count after all robots have acted
             max_steps_reached, truncations = self.env.advance_step()
@@ -275,7 +350,8 @@ class ModelEvaluator:
             episode_infos_history.append(infos)
             episode_q_values_history.append(step_q_values)
             episode_substeps_history.append(step_substeps)
-            episode_dust_history.append(state['dust_grid'].copy())
+            if self.env.dust_enabled:
+                episode_dust_history.append(state['dust_grid'].copy())
 
             # Log EVERY step for complete dynamics tracking
             self.log_step_summary(step_count, episode_rewards, episode_infos_history)
@@ -589,12 +665,15 @@ class ModelEvaluator:
 
         # 計算灰塵比例的分母（全地圖最大可能灰塵總量）
         base_env = self.env.env
-        d_max_grid = np.where(
-            base_env.is_charger_grid,
-            base_env.dust_max * base_env.charger_dust_max_ratio,
-            base_env.dust_max
-        )
-        max_total_dust = float(d_max_grid.sum())
+        if self.env.dust_enabled:
+            d_max_grid = np.where(
+                base_env.is_charger_grid,
+                base_env.dust_max * base_env.charger_dust_max_ratio,
+                base_env.dust_max
+            )
+            max_total_dust = float(d_max_grid.sum())
+        else:
+            max_total_dust = 0.0
 
         # Build replay data structure
         replay_data = {
@@ -622,17 +701,19 @@ class ModelEvaluator:
             infos = episode_infos[step_idx]
             q_values = episode_q_values[step_idx]
             substeps = episode_substeps[step_idx]
-            dust_grid = episode_dust[step_idx]
 
-            # 灰塵比例：當前總灰塵 / 全地圖最大可能灰塵
-            dust_ratio = float(np.sum(dust_grid)) / max_total_dust if max_total_dust > 0 else 0.0
+            # 灰塵資料（僅在啟用時）
+            if self.env.dust_enabled:
+                dust_grid = episode_dust[step_idx]
+                dust_ratio = float(np.sum(dust_grid)) / max_total_dust if max_total_dust > 0 else 0.0
 
             # Build step data
             step_data = {
                 "step": step_idx,
-                "dust_ratio": round(dust_ratio, 4),
-                "dust_grid": [[round(float(dust_grid[y, x]), 4) for x in range(dust_grid.shape[1])]
-                              for y in range(dust_grid.shape[0])],
+                **({"dust_ratio": round(dust_ratio, 4),
+                    "dust_grid": [[round(float(dust_grid[y, x]) * self.env.dust_reward_scale, 4) for x in range(dust_grid.shape[1])]
+                                  for y in range(dust_grid.shape[0])]}
+                   if self.env.dust_enabled else {}),
                 "actions": {
                     f"robot_{i}": action_names[actions[i]]
                     for i in range(self.num_robots)
@@ -777,6 +858,10 @@ def main():
     parser.add_argument("--robot-1-energy", type=int, default=None, help="Initial energy for robot 1")
     parser.add_argument("--robot-2-energy", type=int, default=None, help="Initial energy for robot 2")
     parser.add_argument("--robot-3-energy", type=int, default=None, help="Initial energy for robot 3")
+    parser.add_argument("--robot-0-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 0")
+    parser.add_argument("--robot-1-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 1")
+    parser.add_argument("--robot-2-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 2")
+    parser.add_argument("--robot-3-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 3")
     parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=float, default=1.5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision (互撞或被推人時的傷害)")
@@ -789,6 +874,7 @@ def main():
     parser.add_argument("--charger-dust-max-ratio", type=float, default=0.3, help="Charger cell max dust ratio vs normal")
     parser.add_argument("--charger-dust-rate-ratio", type=float, default=0.5, help="Charger cell growth rate ratio vs normal")
     parser.add_argument("--dust-reward-scale", type=float, default=0.05, help="Dust reward multiplier")
+    parser.add_argument("--no-dust", action="store_true", default=False, help="Disable dust system (removes n² obs dimensions)")
 
     # Simulation settings
     parser.add_argument("--max-steps", type=int, default=1000, help="Maximum steps for single long episode")
@@ -806,6 +892,18 @@ def main():
     parser.add_argument("--wandb-project", type=str, default="robot-vacuum-eval", help="Wandb project name")
     parser.add_argument("--wandb-run-name", type=str, default="long-simulation", help="Wandb run name")
     parser.add_argument("--wandb-mode", type=str, default="online", help="Wandb mode (online/offline/disabled)")
+    parser.add_argument("--exclusive-charging", action="store_true", default=False,
+                        help="充電座獨佔模式：有其他 robot 在 3x3 範圍內時充電無效")
+    parser.add_argument("--scripted-robots", type=str, default="",
+                        help='Comma-separated robot IDs to fix as STAY during eval, e.g. "1" or "1,2"')
+    parser.add_argument("--random-robots", type=str, default="",
+                        help='Comma-separated robot IDs that use random actions during eval, e.g. "1"')
+    parser.add_argument("--safe-random-robots", type=str, default="",
+                        help='Comma-separated robot IDs that use wall-avoiding random walk during eval, e.g. "1"')
+    parser.add_argument("--flee-robots", type=str, default="",
+                        help='Comma-separated robot IDs that use flee heuristic during eval, e.g. "1"')
+    parser.add_argument("--random-start-robots", type=str, default="",
+                        help='Comma-separated robot IDs to randomize start position each episode, e.g. "0"')
 
     args = parser.parse_args()
 

@@ -56,6 +56,10 @@ class RobotVacuumGymEnv:
                 'charger_dust_max_ratio': kwargs.get('charger_dust_max_ratio', 0.3),
                 'charger_dust_rate_ratio': kwargs.get('charger_dust_rate_ratio', 0.5),
                 'dust_reward_scale': kwargs.get('dust_reward_scale', 0.05),
+                'dust_enabled': kwargs.get('dust_enabled', True),
+                'exclusive_charging': kwargs.get('exclusive_charging', False),
+                'robot_speeds': kwargs.get('robot_speeds', None),
+                'random_start_robots': kwargs.get('random_start_robots', set()),
             }
 
         # 創建底層環境
@@ -66,15 +70,18 @@ class RobotVacuumGymEnv:
         self.n = config.get('n', 3)
         self.initial_energy = config['initial_energy']
         self.n_robots = config.get('num_robots', 4)
+        self.dust_enabled = config.get('dust_enabled', True)
         self.dust_reward_scale = config.get('dust_reward_scale', 0.05)
 
         # 定義動作空間 (每個機器人: 0-4)
         self.action_space = spaces.Discrete(5)
 
         # 定義觀測空間 (每個機器人)
-        # [自身位置2 + 自身能量1 + 其他機器人(n_robots-1)*3 + 充電座2*N + 全地圖灰塵n*n]
+        # [自身位置2 + 自身能量1 + 其他機器人(n_robots-1)*3 + 充電座2*N + 全地圖灰塵n*n (若啟用)]
         num_chargers = len(self.env.charger_positions)
-        obs_dim = 3 + (self.n_robots - 1) * 3 + 2 * num_chargers + self.n * self.n
+        obs_dim = 3 + 4 + (self.n_robots - 1) * 3 + 2 * num_chargers  # +4 for wall indicators
+        if self.dust_enabled:
+            obs_dim += self.n * self.n
         self.observation_space = spaces.Box(
             low=-1.0,
             high=1.0,
@@ -164,13 +171,12 @@ class RobotVacuumGymEnv:
         """
         為每個機器人生成觀測向量
 
-        觀測向量結構 (3 + (N-1)*3 + C*2 維，N=機器人數量，C=充電座數量):
+        觀測向量結構 (3 + 4 + (N-1)*3 + C*2 維，N=機器人數量，C=充電座數量):
         - [0:2]: 自身位置 (x, y) 正規化到 [0, 1]
         - [2:3]: 自身能量正規化到 [0, 1]
-        - [3:3+(N-1)*3]: 其他機器人的相對狀態 (dx, dy, energy) * (N-1)
-        - [3+(N-1)*3:]: C個充電座的相對位置 (dx, dy) * C
-
-        注意：移除了可移動方向，agent 可從自身絕對位置推導出邊界資訊
+        - [3:7]: 牆壁指示器 [wall_up, wall_down, wall_left, wall_right] (0 or 1)
+        - [7:7+(N-1)*3]: 其他機器人的相對狀態 (dx, dy, energy) * (N-1)
+        - [7+(N-1)*3:]: C個充電座的相對位置 (dx, dy) * C
         """
         observations = {}
         robots = state['robots']
@@ -197,7 +203,13 @@ class RobotVacuumGymEnv:
             # 2. 自身能量 (用全域最大血量正規化)
             obs.append(robot['energy'] / global_max_energy)
 
-            # 3. 其他機器人的相對狀態
+            # 3. 牆壁指示器 (1.0 = 該方向緊鄰邊界，不能移動)
+            obs.append(1.0 if robot['y'] == 0         else 0.0)  # wall_up
+            obs.append(1.0 if robot['y'] == self.n - 1 else 0.0)  # wall_down
+            obs.append(1.0 if robot['x'] == 0         else 0.0)  # wall_left
+            obs.append(1.0 if robot['x'] == self.n - 1 else 0.0)  # wall_right
+
+            # 4. 其他機器人的相對狀態
             for j in range(self.n_robots):
                 if i == j:
                     continue
@@ -220,13 +232,14 @@ class RobotVacuumGymEnv:
                 obs.extend([dx, dy])
 
             # 5. 全地圖灰塵（每格用各自上限正規化到 [0, 1]，row-major y→x）
-            dust_grid = state['dust_grid']
-            d_max_normal = self.env.dust_max
-            d_max_charger = self.env.dust_max * self.env.charger_dust_max_ratio
-            for dy in range(self.n):
-                for dx in range(self.n):
-                    d_max = d_max_charger if self.env.is_charger_grid[dy, dx] else d_max_normal
-                    obs.append(dust_grid[dy, dx] / d_max)
+            if self.dust_enabled:
+                dust_grid = state['dust_grid']
+                d_max_normal = self.env.dust_max
+                d_max_charger = self.env.dust_max * self.env.charger_dust_max_ratio
+                for dy in range(self.n):
+                    for dx in range(self.n):
+                        d_max = d_max_charger if self.env.is_charger_grid[dy, dx] else d_max_normal
+                        obs.append(dust_grid[dy, dx] / d_max)
 
             observations[agent_id] = np.array(obs, dtype=np.float32)
 
@@ -259,7 +272,8 @@ class RobotVacuumGymEnv:
                 reward -= 100.0
 
             # 3. 灰塵獎勵
-            reward += robot['dust_collected_this_step'] * self.dust_reward_scale
+            if self.dust_enabled:
+                reward += robot['dust_collected_this_step'] * self.dust_reward_scale
 
             rewards[agent_id] = reward
 
@@ -400,7 +414,8 @@ class RobotVacuumGymEnv:
             reward -= 100.0
 
         # 3. 灰塵獎勵
-        reward += robot['dust_collected_this_step'] * self.dust_reward_scale
+        if self.dust_enabled:
+            reward += robot['dust_collected_this_step'] * self.dust_reward_scale
 
         return reward
 
