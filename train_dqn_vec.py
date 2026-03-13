@@ -20,7 +20,7 @@ from collections import deque
 from typing import Dict, List, Tuple
 
 # Import the DQN network and components from dqn.py
-from dqn import DQN, init_weights
+from dqn import DQN, init_weights, build_network, NoisyLinear, C51DQN
 
 # Import environments
 from gym import RobotVacuumGymEnv
@@ -54,6 +54,7 @@ class SharedBufferDQNAgent:
 
         # Epsilon configuration
         self.use_epsilon_decay = args.use_epsilon_decay
+        self.epsilon_schedule = getattr(args, 'epsilon_schedule', 'linear')
         if self.use_epsilon_decay:
             self.epsilon = args.epsilon_start
             self.epsilon_start = args.epsilon_start
@@ -65,10 +66,29 @@ class SharedBufferDQNAgent:
         # Eval epsilon
         self.eval_epsilon = getattr(args, 'eval_epsilon', 0.0)
 
+        # Rainbow flags
+        self.use_noisy = getattr(args, 'noisy', False)
+        self.use_c51 = getattr(args, 'c51', False)
+        self.use_dueling = getattr(args, 'dueling', False)
+        self.num_atoms = getattr(args, 'num_atoms', 51)
+        self.v_min = getattr(args, 'v_min', -100.0)
+        self.v_max = getattr(args, 'v_max', 100.0)
+
         # Network architecture
-        self.q_net = DQN(action_dim, observation_dim).to(device)
-        self.target_net = DQN(action_dim, observation_dim).to(device)
-        self.q_net.apply(init_weights)
+        self.q_net = build_network(
+            action_dim, observation_dim,
+            dueling=self.use_dueling, noisy=self.use_noisy,
+            c51=self.use_c51, num_atoms=self.num_atoms,
+            v_min=self.v_min, v_max=self.v_max,
+        ).to(device)
+        self.target_net = build_network(
+            action_dim, observation_dim,
+            dueling=self.use_dueling, noisy=self.use_noisy,
+            c51=self.use_c51, num_atoms=self.num_atoms,
+            v_min=self.v_min, v_max=self.v_max,
+        ).to(device)
+        if not self.use_noisy:
+            self.q_net.apply(init_weights)
         self.target_net.load_state_dict(self.q_net.state_dict())
 
         # Compile models (optional)
@@ -87,57 +107,169 @@ class SharedBufferDQNAgent:
         # Counters
         self.train_count = 0
 
-    def train_step(self, batch: Tuple) -> Dict[str, float]:
+    def train_step(self, batch: Tuple, weights: torch.Tensor = None) -> Dict[str, float]:
         """
-        Execute one training step using provided batch
+        Execute one training step using provided batch.
 
         Args:
             batch: Tuple of (states, actions, rewards, next_states, dones, actual_n_steps) as tensors
+            weights: Optional IS-correction weights for PER (shape: batch_size,)
 
         Returns:
-            Training statistics
+            Training statistics. When weights are provided, also includes 'td_errors' (numpy array).
         """
         states, actions, rewards, next_states, dones, actual_n_steps = batch
         self.train_count += 1
 
+        if self.use_c51:
+            loss, td_errors, q_values = self._train_step_c51(
+                states, actions, rewards, next_states, dones, actual_n_steps, weights)
+        else:
+            loss, td_errors, q_values = self._train_step_dqn(
+                states, actions, rewards, next_states, dones, actual_n_steps, weights)
+
+        # Reset noise after each training step (NoisyNet)
+        if self.use_noisy:
+            self.q_net.reset_noise()
+            self.target_net.reset_noise()
+
+        stats = {
+            'loss': loss.item(),
+            'q_mean': q_values.mean().item(),
+            'q_std': q_values.std().item(),
+        }
+        if weights is not None:
+            stats['td_errors'] = td_errors.detach().float().cpu().numpy()
+        return stats
+
+    def _train_step_dqn(self, states, actions, rewards, next_states, dones, actual_n_steps, weights):
+        """Standard (Double) DQN loss."""
         if self.use_amp:
             with torch.amp.autocast('cuda'):
                 q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-
                 with torch.no_grad():
-                    # 計算 per-sample 的 gamma^k（k = 實際累積步數）
                     gamma_n = self.gamma ** actual_n_steps
                     next_actions = self.q_net(next_states).argmax(1, keepdim=True)
                     next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
                     target_q_values = rewards + gamma_n * next_q_values * (1 - dones)
-
-                loss = nn.MSELoss()(q_values, target_q_values)
-
+                td_errors = q_values - target_q_values
+                if weights is not None:
+                    loss = (weights * td_errors.pow(2)).mean()
+                else:
+                    loss = td_errors.pow(2).mean()
             self.optimizer.zero_grad()
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
             q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-
             with torch.no_grad():
-                # 計算 per-sample 的 gamma^k（k = 實際累積步數）
                 gamma_n = self.gamma ** actual_n_steps
                 next_actions = self.q_net(next_states).argmax(1, keepdim=True)
                 next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
                 target_q_values = rewards + gamma_n * next_q_values * (1 - dones)
+            td_errors = q_values - target_q_values
+            if weights is not None:
+                loss = (weights * td_errors.pow(2)).mean()
+            else:
+                loss = td_errors.pow(2).mean()
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+        return loss, td_errors, q_values
 
-            loss = nn.MSELoss()(q_values, target_q_values)
+    def _train_step_c51(self, states, actions, rewards, next_states, dones, actual_n_steps, weights):
+        """Categorical (C51) distributional loss with Double-DQN action selection."""
+        import torch.nn.functional as _F
+        net = self.q_net
+        tgt = self.target_net
+        B = states.size(0)
+        N = self.num_atoms
+        v_min, v_max = self.v_min, self.v_max
+        delta_z = (v_max - v_min) / (N - 1)
+        atoms = net.atoms  # (N,)
+
+        if self.use_amp:
+            with torch.amp.autocast('cuda'):
+                # Current distribution
+                log_probs = net.dist(states)  # (B, A, N)
+                log_probs_a = log_probs[torch.arange(B, device=states.device), actions]  # (B, N)
+
+                with torch.no_grad():
+                    # Double DQN: use online net to select action
+                    next_actions = net(next_states).argmax(1)  # (B,)
+                    # Target distribution for selected action
+                    target_log_probs = tgt.dist(next_states)
+                    target_probs = target_log_probs.exp()
+                    target_probs_a = target_probs[torch.arange(B, device=states.device), next_actions]  # (B, N)
+
+                    # Project target distribution
+                    gamma_n = self.gamma ** actual_n_steps  # (B,)
+                    Tz = rewards.unsqueeze(1) + gamma_n.unsqueeze(1) * (1 - dones.unsqueeze(1)) * atoms.unsqueeze(0)
+                    Tz = Tz.clamp(v_min, v_max)
+                    b = (Tz - v_min) / delta_z  # (B, N)
+                    l = b.floor().long()
+                    u = b.ceil().long()
+                    # Fix edge case: l == u
+                    l = l.clamp(0, N - 1)
+                    u = u.clamp(0, N - 1)
+
+                    proj = torch.zeros_like(target_probs_a)
+                    proj.scatter_add_(1, l, target_probs_a * (u.float() - b))
+                    proj.scatter_add_(1, u, target_probs_a * (b - l.float()))
+
+                # Cross-entropy loss
+                elem_loss = -(_F.log_softmax(log_probs[torch.arange(B, device=states.device), actions], dim=1) * proj).sum(dim=1)
+
+                if weights is not None:
+                    loss = (weights * elem_loss).mean()
+                else:
+                    loss = elem_loss.mean()
+
+            self.optimizer.zero_grad()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            # Current distribution
+            log_probs = net.dist(states)
+            log_probs_a = log_probs[torch.arange(B, device=states.device), actions]
+
+            with torch.no_grad():
+                next_actions = net(next_states).argmax(1)
+                target_log_probs = tgt.dist(next_states)
+                target_probs = target_log_probs.exp()
+                target_probs_a = target_probs[torch.arange(B, device=states.device), next_actions]
+
+                gamma_n = self.gamma ** actual_n_steps
+                Tz = rewards.unsqueeze(1) + gamma_n.unsqueeze(1) * (1 - dones.unsqueeze(1)) * atoms.unsqueeze(0)
+                Tz = Tz.clamp(v_min, v_max)
+                b = (Tz - v_min) / delta_z
+                l = b.floor().long().clamp(0, N - 1)
+                u = b.ceil().long().clamp(0, N - 1)
+
+                proj = torch.zeros_like(target_probs_a)
+                proj.scatter_add_(1, l, target_probs_a * (u.float() - b))
+                proj.scatter_add_(1, u, target_probs_a * (b - l.float()))
+
+            elem_loss = -(log_probs_a * proj).sum(dim=1)
+
+            if weights is not None:
+                loss = (weights * elem_loss).mean()
+            else:
+                loss = elem_loss.mean()
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-        return {
-            'loss': loss.item(),
-            'q_mean': q_values.mean().item(),
-            'q_std': q_values.std().item()
-        }
+        # TD errors for PER (use element-wise loss as proxy)
+        td_errors = elem_loss.detach()
+        # Q-values for logging
+        with torch.no_grad():
+            q_values = net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
+
+        return loss, td_errors, q_values
 
     def update_target_network(self):
         self.target_net.load_state_dict(self.q_net.state_dict())
@@ -149,8 +281,13 @@ class SharedBufferDQNAgent:
     def set_epsilon_by_progress(self, progress: float):
         """Set epsilon based on training progress (0.0 to 1.0)"""
         if self.use_epsilon_decay:
-            # Linear decay from epsilon_start to epsilon_end
-            self.epsilon = self.epsilon_start + (self.epsilon_end - self.epsilon_start) * progress
+            if self.epsilon_schedule == 'exponential':
+                # Exponential decay: ε = ε_start * (ε_end/ε_start)^progress
+                # At progress=0 → ε_start, at progress=1 → ε_end
+                self.epsilon = self.epsilon_start * (self.epsilon_end / self.epsilon_start) ** progress
+            else:
+                # Linear decay from epsilon_start to epsilon_end
+                self.epsilon = self.epsilon_start + (self.epsilon_end - self.epsilon_start) * progress
 
     def save(self, filepath: str):
         # 若 torch.compile 已包裝成 OptimizedModule，取出原始權重存檔
@@ -212,6 +349,140 @@ class NumpyReplayBuffer:
         idx = np.random.choice(self._size, size=batch_size, replace=False)
         return (self._states[idx], self._actions[idx], self._rewards[idx],
                 self._next_states[idx], self._dones[idx], self._n_steps[idx])
+
+    def __len__(self):
+        return self._size
+
+
+class SumTree:
+    """
+    Binary sum tree for O(log N) priority sampling.
+    Leaves store per-sample priorities; each internal node = sum of children.
+    """
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+        self.tree = np.zeros(2 * capacity - 1, dtype=np.float64)
+
+    def update(self, idx: int, priority: float):
+        """Update leaf at data index idx and propagate upward."""
+        tree_idx = idx + self.capacity - 1
+        delta = priority - self.tree[tree_idx]
+        self.tree[tree_idx] = priority
+        while tree_idx != 0:
+            tree_idx = (tree_idx - 1) // 2
+            self.tree[tree_idx] += delta
+
+    def sample(self, value: float) -> int:
+        """Walk tree downward to find leaf for given cumulative value."""
+        idx = 0
+        while idx < self.capacity - 1:
+            left = 2 * idx + 1
+            if value <= self.tree[left]:
+                idx = left
+            else:
+                value -= self.tree[left]
+                idx = 2 * idx + 2
+        return idx - (self.capacity - 1)
+
+    @property
+    def total(self) -> float:
+        return float(self.tree[0])
+
+
+class PrioritizedReplayBuffer:
+    """
+    Prioritized Experience Replay buffer (Schaul et al. 2015).
+    Same append interface as NumpyReplayBuffer; sample() additionally returns
+    indices and IS-correction weights.
+    """
+    def __init__(self, capacity: int, obs_dim: int, alpha: float = 0.6):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.tree = SumTree(capacity)
+
+        self._states      = np.zeros((capacity, obs_dim), dtype=np.float32)
+        self._next_states = np.zeros((capacity, obs_dim), dtype=np.float32)
+        self._actions     = np.zeros(capacity, dtype=np.int64)
+        self._rewards     = np.zeros(capacity, dtype=np.float32)
+        self._dones       = np.zeros(capacity, dtype=np.float32)
+        self._n_steps     = np.ones(capacity,  dtype=np.float32)
+        self._ptr  = 0
+        self._size = 0
+        self._max_priority = 1.0
+
+    def _set(self, i: int, state, action, reward, next_state, done, n_step):
+        self._states[i]      = state
+        self._next_states[i] = next_state
+        self._actions[i]     = action
+        self._rewards[i]     = reward
+        self._dones[i]       = float(done)
+        self._n_steps[i]     = n_step
+        self.tree.update(i, self._max_priority ** self.alpha)
+
+    def append(self, transition):
+        state, action, reward, next_state, done, n_step = transition
+        self._set(self._ptr, state, action, reward, next_state, done, n_step)
+        self._ptr  = (self._ptr + 1) % self.capacity
+        self._size = min(self._size + 1, self.capacity)
+
+    def append_batch(self, states, actions, rewards, next_states, dones, n_steps):
+        n = len(states)
+        if n == 0:
+            return
+        priority = self._max_priority ** self.alpha
+        for j in range(n):
+            i = (self._ptr + j) % self.capacity
+            self._states[i]      = states[j]
+            self._next_states[i] = next_states[j]
+            self._actions[i]     = actions[j]
+            self._rewards[i]     = rewards[j]
+            self._dones[i]       = dones[j]
+            self._n_steps[i]     = n_steps[j]
+            self.tree.update(i, priority)
+        self._ptr  = int((self._ptr + n) % self.capacity)
+        self._size = min(self._size + n, self.capacity)
+
+    def sample(self, batch_size: int, beta: float = 0.4):
+        """
+        Stratified sampling: divide [0, total] into batch_size segments,
+        draw one sample per segment.
+        Returns (states, actions, rewards, next_states, dones, n_steps, indices, weights).
+        """
+        total = self.tree.total
+        segment = total / batch_size
+
+        indices = np.zeros(batch_size, dtype=np.int64)
+        priorities = np.zeros(batch_size, dtype=np.float64)
+
+        for i in range(batch_size):
+            lo, hi = segment * i, segment * (i + 1)
+            value = np.random.uniform(lo, hi)
+            idx = self.tree.sample(value)
+            idx = int(np.clip(idx, 0, self._size - 1))
+            indices[i] = idx
+            priorities[i] = self.tree.tree[idx + self.capacity - 1]
+
+        # IS weights: w_i = (N * P(i))^{-beta}, normalised by max weight
+        probs = priorities / total
+        weights = (self._size * probs) ** (-beta)
+        weights = (weights / weights.max()).astype(np.float32)
+
+        return (
+            self._states[indices],
+            self._actions[indices],
+            self._rewards[indices],
+            self._next_states[indices],
+            self._dones[indices],
+            self._n_steps[indices],
+            indices,
+            weights,
+        )
+
+    def update_priorities(self, indices: np.ndarray, td_errors: np.ndarray, epsilon: float = 1e-6):
+        priorities = (np.abs(td_errors) + epsilon) ** self.alpha
+        for idx, p in zip(indices, priorities):
+            self.tree.update(int(idx), float(p))
+        self._max_priority = max(self._max_priority, float(priorities.max()))
 
     def __len__(self):
         return self._size
@@ -301,6 +572,15 @@ class VectorizedMultiAgentTrainer:
                 print(f"Error parsing charger positions: {e}")
                 charger_positions = None
 
+        # Parse robot start positions (optional)
+        robot_start_positions = {}
+        rsp_str = getattr(args, 'robot_start_positions', None)
+        if rsp_str:
+            for i, pos_str in enumerate(rsp_str.split(';')):
+                y, x = map(int, pos_str.split(','))
+                robot_start_positions[i] = (y, x)
+            print(f"Using custom robot start positions: { {i: pos for i, pos in robot_start_positions.items()} }")
+
         env_kwargs = {
             'n': args.env_n,
             'num_robots': self.num_robots,
@@ -321,9 +601,17 @@ class VectorizedMultiAgentTrainer:
             'dust_reward_scale': args.dust_reward_scale,
             'dust_enabled': not args.no_dust,
             'exclusive_charging': args.exclusive_charging,
+            'charger_range': args.charger_range,
             'random_start_robots': set(
                 int(x) for x in getattr(args, 'random_start_robots', '').split(',') if x.strip()
             ),
+            'robot_start_positions': robot_start_positions,
+            'agent_types_mode': args.agent_types_mode,
+            'triangle_agent_id': args.triangle_agent_id,
+            'heterotype_charge_mode': args.heterotype_charge_mode,
+            'heterotype_charge_factor': args.heterotype_charge_factor,
+            'energy_cap': args.energy_cap,
+            'e_decay': args.e_decay,
         }
 
         # Create vectorized environment
@@ -356,6 +644,14 @@ class VectorizedMultiAgentTrainer:
         self.n_agents = self.num_robots
         action_dim = 5
 
+        # Print Rainbow DQN features
+        rainbow_features = []
+        if getattr(args, 'dueling', False): rainbow_features.append('Dueling')
+        if getattr(args, 'noisy', False):   rainbow_features.append('NoisyNet')
+        if getattr(args, 'c51', False):     rainbow_features.append(f'C51(atoms={args.num_atoms}, v=[{args.v_min},{args.v_max}])')
+        if rainbow_features:
+            print(f"Rainbow DQN features: {', '.join(rainbow_features)}")
+
         self.agents = {}
         for agent_id in self.agent_ids:
             self.agents[agent_id] = SharedBufferDQNAgent(
@@ -378,11 +674,20 @@ class VectorizedMultiAgentTrainer:
                 else:
                     print(f"  WARNING: {model_path} not found, using fresh weights for {agent_id}")
 
-        # Independent Replay Buffer (每個 agent 獨立) — numpy ring buffer
-        self.memories = {
-            agent_id: NumpyReplayBuffer(args.memory_size, observation_dim)
-            for agent_id in self.agent_ids
-        }
+        # Independent Replay Buffer (每個 agent 獨立)
+        self.use_per = getattr(args, 'per', False)
+        if self.use_per:
+            per_alpha = getattr(args, 'per_alpha', 0.6)
+            self.memories = {
+                agent_id: PrioritizedReplayBuffer(args.memory_size, observation_dim, alpha=per_alpha)
+                for agent_id in self.agent_ids
+            }
+            print(f"Using Prioritized Experience Replay (alpha={per_alpha})")
+        else:
+            self.memories = {
+                agent_id: NumpyReplayBuffer(args.memory_size, observation_dim)
+                for agent_id in self.agent_ids
+            }
 
         # N-step buffer (per environment, per agent)
         self.n_step = getattr(args, 'n_step', 1)
@@ -456,7 +761,12 @@ class VectorizedMultiAgentTrainer:
         self._episode_steps = np.zeros(_n, dtype=np.int32)
         self._episode_immediate_kills = np.zeros(_n, dtype=np.int32)
         self._episode_active_collisions = np.zeros((_n, self.n_agents), dtype=np.int32)
-        self._robot0_death_step = np.full(_n, -1, dtype=np.int32)  # -1 = alive
+        self._robot_death_step = np.full((_n, self.n_agents), -1, dtype=np.int32)  # -1 = alive
+        self._monopoly_step = np.full(_n, -1, dtype=np.int32)   # step when all weak robots dead
+        self._episode_collisions_matrix = np.zeros((_n, self.n_agents, self.n_agents), dtype=np.int32)  # [env, attacker, victim]
+        # 累計兩者 Manhattan distance（僅 2-robot 有意義）
+        self._episode_dist_sum = np.zeros(_n, dtype=np.float32)
+        self._episode_dist_steps = np.zeros(_n, dtype=np.int32)
 
     def remember(self, state, action, reward, next_state, done, env_idx=0, agent_idx=0):
         """
@@ -613,33 +923,63 @@ class VectorizedMultiAgentTrainer:
             np.full(len(full_envs), k, dtype=np.float32)
         )
 
-    def sample_batch(self, agent_id: str) -> Tuple:
-        """Sample a batch from agent's NumpyReplayBuffer and convert to tensors"""
+    def _get_per_beta(self) -> float:
+        """Linearly anneal beta from per_beta_start → 1.0 over per_beta_steps global steps."""
+        beta_start = getattr(self.args, 'per_beta_start', 0.4)
+        beta_steps = getattr(self.args, 'per_beta_steps', 100000)
+        progress = min(1.0, self.global_step / max(beta_steps, 1))
+        return beta_start + (1.0 - beta_start) * progress
+
+    def sample_batch(self, agent_id: str):
+        """
+        Sample a batch from agent's replay buffer and convert to tensors.
+        In PER mode returns (states, actions, rewards, next_states, dones, n_steps, indices, weights).
+        In uniform mode returns (states, actions, rewards, next_states, dones, n_steps).
+        """
         agent_memory = self.memories[agent_id]
         if len(agent_memory) == 0:
             return None
         batch_size = min(self.args.batch_size, len(agent_memory))
 
-        # NumpyReplayBuffer.sample() 直接回傳 numpy arrays，無需 list() 轉換
-        states_np, actions_np, rewards_np, next_states_np, dones_np, actual_n_steps_np = \
-            agent_memory.sample(batch_size)
+        def _to_tensor(arr, dtype=None):
+            t = torch.from_numpy(arr)
+            if dtype is not None:
+                t = t.to(dtype)
+            return t.to(self.device, non_blocking=True)
 
-        states          = torch.from_numpy(states_np).to(self.device, non_blocking=True)
-        next_states     = torch.from_numpy(next_states_np).to(self.device, non_blocking=True)
-        actions         = torch.from_numpy(actions_np).to(self.device, non_blocking=True)
-        rewards         = torch.from_numpy(rewards_np).to(self.device, non_blocking=True)
-        dones           = torch.from_numpy(dones_np).to(self.device, non_blocking=True)
-        actual_n_steps_t = torch.from_numpy(actual_n_steps_np).to(self.device, non_blocking=True)
-
-        return states, actions, rewards, next_states, dones, actual_n_steps_t
+        if self.use_per:
+            beta = self._get_per_beta()
+            states_np, actions_np, rewards_np, next_states_np, dones_np, n_steps_np, indices, weights_np = \
+                agent_memory.sample(batch_size, beta)
+            return (
+                _to_tensor(states_np),
+                _to_tensor(actions_np),
+                _to_tensor(rewards_np),
+                _to_tensor(next_states_np),
+                _to_tensor(dones_np),
+                _to_tensor(n_steps_np),
+                indices,                              # numpy — for update_priorities
+                _to_tensor(weights_np),               # IS weights tensor
+            )
+        else:
+            states_np, actions_np, rewards_np, next_states_np, dones_np, n_steps_np = \
+                agent_memory.sample(batch_size)
+            return (
+                _to_tensor(states_np),
+                _to_tensor(actions_np),
+                _to_tensor(rewards_np),
+                _to_tensor(next_states_np),
+                _to_tensor(dones_np),
+                _to_tensor(n_steps_np),
+            )
 
     def select_actions_vectorized(self, observations: np.ndarray) -> np.ndarray:
         """
         Vectorized action selection for all environments and agents
-        
+
         Args:
             observations: shape (num_envs, n_agents, obs_dim) or (n_agents, obs_dim)
-            
+
         Returns:
             actions: shape (num_envs, n_agents) or (n_agents,)
         """
@@ -647,37 +987,54 @@ class VectorizedMultiAgentTrainer:
             # (num_envs, n_agents, obs_dim)
             num_envs, n_agents, obs_dim = observations.shape
             actions = np.zeros((num_envs, n_agents), dtype=np.int32)
-            
+
             for agent_idx, agent_id in enumerate(self.agent_ids):
                 agent = self.agents[agent_id]
+
+                if agent.use_noisy:
+                    # NoisyNet: no epsilon-greedy
+                    obs_batch = observations[:, agent_idx]
+                    obs_tensor = torch.from_numpy(obs_batch).to(self.device)
+                    with torch.no_grad():
+                        q_values = agent.q_net(obs_tensor)
+                        actions[:, agent_idx] = q_values.argmax(dim=1).cpu().numpy()
+                    continue
+
                 epsilon = agent.epsilon
-                
+
                 # 決定哪些環境用 random，哪些用網路
                 random_mask = np.random.random(num_envs) < epsilon
-                
+
                 # Random actions
                 actions[random_mask, agent_idx] = np.random.randint(0, agent.action_dim, size=random_mask.sum())
-                
+
                 # Network actions for remaining environments
                 if (~random_mask).any():
                     obs_batch = observations[~random_mask, agent_idx]  # (N, obs_dim)
                     obs_tensor = torch.from_numpy(obs_batch).to(self.device)
-                    
+
                     with torch.no_grad():
                         q_values = agent.q_net(obs_tensor)
                         net_actions = q_values.argmax(dim=1).cpu().numpy()
-                    
+
                     actions[~random_mask, agent_idx] = net_actions
-            
+
             return actions
         else:
             # Single environment mode: (n_agents, obs_dim)
             n_agents, obs_dim = observations.shape
             actions = np.zeros(n_agents, dtype=np.int32)
-            
+
             for agent_idx, agent_id in enumerate(self.agent_ids):
                 agent = self.agents[agent_id]
-                
+
+                if agent.use_noisy:
+                    obs_tensor = torch.from_numpy(observations[agent_idx:agent_idx+1]).to(self.device)
+                    with torch.no_grad():
+                        q_values = agent.q_net(obs_tensor)
+                        actions[agent_idx] = q_values.argmax().item()
+                    continue
+
                 if random.random() < agent.epsilon:
                     actions[agent_idx] = random.randint(0, agent.action_dim - 1)
                 else:
@@ -685,7 +1042,7 @@ class VectorizedMultiAgentTrainer:
                     with torch.no_grad():
                         q_values = agent.q_net(obs_tensor)
                         actions[agent_idx] = q_values.argmax().item()
-            
+
             return actions
 
     def train(self):
@@ -708,9 +1065,18 @@ class VectorizedMultiAgentTrainer:
         """
         agent_id = self.agent_ids[robot_id]
         agent = self.agents[agent_id]
-        epsilon = agent.epsilon
 
         num_envs = observations.shape[0]
+
+        # NoisyNet: no epsilon-greedy, noise in weights provides exploration
+        if agent.use_noisy:
+            obs_tensor = torch.from_numpy(observations).to(self.device)
+            with torch.no_grad():
+                q_values = agent.q_net(obs_tensor)
+                actions = q_values.argmax(dim=1).cpu().numpy()
+            return actions
+
+        epsilon = agent.epsilon
         actions = np.zeros(num_envs, dtype=np.int32)
 
         # 決定哪些環境用 random，哪些用網路
@@ -757,7 +1123,7 @@ class VectorizedMultiAgentTrainer:
         Flee heuristic: move away from the first opponent, wall-aware.
 
         Obs layout:
-          [x, y, energy, wall_up, wall_down, wall_left, wall_right, opp_dx, opp_dy, ...]
+          [x, y, energy, self_type, wall_up, wall_down, wall_left, wall_right, opp_dx, opp_dy, ...]
           dx > 0 → opponent RIGHT → primary flee LEFT  (action 2)
           dx < 0 → opponent LEFT  → primary flee RIGHT (action 3)
           dy > 0 → opponent BELOW → primary flee UP    (action 0)
@@ -766,12 +1132,12 @@ class VectorizedMultiAgentTrainer:
         If primary flee direction is blocked by wall, fall back to
         the other axis. If both blocked, STAY.
         """
-        dx = obs[:, 7]
-        dy = obs[:, 8]
-        wall_up    = obs[:, 3]  # 1.0 if y==0
-        wall_down  = obs[:, 4]  # 1.0 if y==n-1
-        wall_left  = obs[:, 5]  # 1.0 if x==0
-        wall_right = obs[:, 6]  # 1.0 if x==n-1
+        dx = obs[:, 8]
+        dy = obs[:, 9]
+        wall_up    = obs[:, 4]  # 1.0 if y==0
+        wall_down  = obs[:, 5]  # 1.0 if y==n-1
+        wall_left  = obs[:, 6]  # 1.0 if x==0
+        wall_right = obs[:, 7]  # 1.0 if x==n-1
 
         # Wall-check per action: 1 = blocked
         blocked = {
@@ -812,6 +1178,11 @@ class VectorizedMultiAgentTrainer:
         # Reset episode statistics
         self._episode_rewards.fill(0)
         self._episode_steps.fill(0)
+        self._robot_death_step.fill(-1)
+        self._monopoly_step.fill(-1)
+        self._episode_collisions_matrix.fill(0)
+        self._episode_dist_sum.fill(0)
+        self._episode_dist_steps.fill(0)
 
         # Track terminations per environment
         env_terminations = np.zeros((self.num_envs, self.n_agents), dtype=bool)
@@ -857,24 +1228,36 @@ class VectorizedMultiAgentTrainer:
                     if self.use_vec_env and isinstance(self.env, BatchRobotVacuumEnv):
                         # 全向量化：直接從 BatchRobotVacuumEnv 的 numpy array 讀碰撞數
                         self._episode_rewards[:, robot_id] += rewards
-                        self._episode_active_collisions[:, robot_id] += \
-                            self.env.active_collisions_with[:, robot_id, :].sum(axis=1)
+                        col_vec = self.env.active_collisions_with[:, robot_id, :]  # (N, R)
+                        self._episode_active_collisions[:, robot_id] += col_vec.sum(axis=1)
+                        self._episode_collisions_matrix[:, robot_id, :] += col_vec
                         env_terminations[:, robot_id] |= terminated
-                        if robot_id == 0:
-                            new_deaths = terminated & (self._robot0_death_step == -1)
-                            self._robot0_death_step[new_deaths] = \
-                                self._episode_steps[new_deaths] + 1
+                        # Track death step for ALL robots
+                        new_deaths = terminated & (self._robot_death_step[:, robot_id] == -1)
+                        self._robot_death_step[new_deaths, robot_id] = self._episode_steps[new_deaths] + 1
+                        # Monopoly: all weak robots (id >= 1) dead
+                        if self.n_agents > 1:
+                            weak_dead = (self._robot_death_step[:, 1:] != -1).all(axis=1)
+                            new_mono = weak_dead & (self._monopoly_step == -1)
+                            self._monopoly_step[new_mono] = self._episode_steps[new_mono]
                     else:
                         for env_idx in range(self.num_envs):
                             self._episode_rewards[env_idx, robot_id] += rewards[env_idx]
-                            self._episode_active_collisions[env_idx, robot_id] += sum(
-                                infos[env_idx].get(f'active_collisions_with_{j}', 0)
-                                for j in range(self.n_agents)
-                            )
+                            for j in range(self.n_agents):
+                                c = infos[env_idx].get(f'active_collisions_with_{j}', 0)
+                                self._episode_active_collisions[env_idx, robot_id] += c
+                                self._episode_collisions_matrix[env_idx, robot_id, j] += c
                             if terminated[env_idx]:
                                 env_terminations[env_idx, robot_id] = True
-                                if robot_id == 0 and self._robot0_death_step[env_idx] == -1:
-                                    self._robot0_death_step[env_idx] = self._episode_steps[env_idx] + 1
+                                if self._robot_death_step[env_idx, robot_id] == -1:
+                                    self._robot_death_step[env_idx, robot_id] = self._episode_steps[env_idx] + 1
+                        # Monopoly check (non-batch path)
+                        if self.n_agents > 1:
+                            for env_idx in range(self.num_envs):
+                                weak_dead = all(self._robot_death_step[env_idx, j] != -1
+                                                for j in range(1, self.n_agents))
+                                if weak_dead and self._monopoly_step[env_idx] == -1:
+                                    self._monopoly_step[env_idx] = self._episode_steps[env_idx]
 
                     # --- Store transitions (learning mode only) ---
                     if is_learning:
@@ -889,6 +1272,15 @@ class VectorizedMultiAgentTrainer:
             for env_idx in range(self.num_envs):
                 self._episode_steps[env_idx] += 1
 
+            # Manhattan distance between robot_0 and robot_1 (2-agent only)
+            if self.n_agents >= 2 and hasattr(self.env, 'pos'):
+                # batch_env: self.env.pos shape (N, R, 2)
+                dy = np.abs(self.env.pos[:, 0, 0] - self.env.pos[:, 1, 0])
+                dx = np.abs(self.env.pos[:, 0, 1] - self.env.pos[:, 1, 1])
+                alive_both = self.env.alive[:, 0] & self.env.alive[:, 1]
+                self._episode_dist_sum[alive_both] += (dy + dx)[alive_both]
+                self._episode_dist_steps[alive_both] += 1
+
             # Train (controlled by train_frequency)
             if self.global_step % self.train_frequency == 0:
                 # 每個 agent 從自己的 buffer 抽樣訓練
@@ -898,7 +1290,14 @@ class VectorizedMultiAgentTrainer:
                         batch = self.sample_batch(agent_id)
 
                         if batch is not None:
-                            train_stats = self.agents[agent_id].train_step(batch)
+                            if self.use_per:
+                                *batch6, indices, weights = batch
+                                train_stats = self.agents[agent_id].train_step(tuple(batch6), weights=weights)
+                                td_errors = train_stats.get('td_errors')
+                                if td_errors is not None:
+                                    agent_memory.update_priorities(indices, td_errors)
+                            else:
+                                train_stats = self.agents[agent_id].train_step(batch)
 
                             # Log training stats (reduced frequency)
                             if train_stats and self.global_step % 10000 == 0:
@@ -931,10 +1330,16 @@ class VectorizedMultiAgentTrainer:
                         str(self._episode_active_collisions[env_idx, i])
                         for i in range(self.n_agents)
                     )
-                    death_step = self._robot0_death_step[env_idx]
-                    death_str = f"r0_died@{death_step}" if death_step != -1 else "r0_alive"
+                    # Death steps for all robots
+                    death_parts = []
+                    for i in range(self.n_agents):
+                        ds = self._robot_death_step[env_idx, i]
+                        death_parts.append(f"r{i}@{ds}" if ds != -1 else f"r{i}_alive")
+                    death_str = " ".join(death_parts)
+                    mono = self._monopoly_step[env_idx]
+                    mono_str = f" mono@{mono}" if mono != -1 else ""
                     print(f"[Episode {self.total_episodes}] Steps:{steps} | "
-                          f"{rewards_str} | Collisions({collisions_str}) | {death_str} | ε:{current_epsilon:.3f}")
+                          f"{rewards_str} | Collisions({collisions_str}) | {death_str}{mono_str} | ε:{current_epsilon:.3f}")
 
                     # 計算所有 buffer 的總大小
                     total_buffer_size = sum(len(m) for m in self.memories.values())
@@ -947,18 +1352,44 @@ class VectorizedMultiAgentTrainer:
                         "buffer_size": total_buffer_size
                     }
                     for i in range(self.n_agents):
+                        ds = self._robot_death_step[env_idx, i]
                         log_dict[f"robot_{i}/episode_reward"] = self._episode_rewards[env_idx, i]
                         log_dict[f"robot_{i}/active_collisions"] = int(self._episode_active_collisions[env_idx, i])
-                    if death_step != -1:
-                        log_dict["robot_0/death_step"] = int(death_step)
+                        log_dict[f"robot_{i}/survived"] = int(ds == -1)
+                        if ds != -1:
+                            log_dict[f"robot_{i}/death_step"] = int(ds)
+                        # Per-pair collision: how many times robot_i attacked robot_j
+                        for j in range(self.n_agents):
+                            if i != j:
+                                log_dict[f"robot_{i}/attacks_robot_{j}"] = int(self._episode_collisions_matrix[env_idx, i, j])
+                    if mono != -1:
+                        log_dict["robot_0/monopoly_step"] = int(mono)
+                    # Mean Manhattan distance (only when both robots were alive)
+                    if self.n_agents >= 2 and self._episode_dist_steps[env_idx] > 0:
+                        log_dict["behavior/mean_distance"] = float(
+                            self._episode_dist_sum[env_idx] / self._episode_dist_steps[env_idx]
+                        )
+                    # Kill order: sorted death steps among weak robots
+                    if self.n_agents > 1:
+                        weak_deaths = [(i, self._robot_death_step[env_idx, i])
+                                       for i in range(1, self.n_agents)
+                                       if self._robot_death_step[env_idx, i] != -1]
+                        weak_deaths.sort(key=lambda x: x[1])
+                        for rank, (rid, ds) in enumerate(weak_deaths):
+                            log_dict[f"kill_order/rank{rank+1}_robot"] = rid
+                            log_dict[f"kill_order/rank{rank+1}_step"] = int(ds)
                     wandb.log(log_dict)
 
                 # Reset episode statistics for this environment
                 self._episode_rewards[env_idx].fill(0)
                 self._episode_steps[env_idx] = 0
                 self._episode_active_collisions[env_idx].fill(0)
+                self._episode_collisions_matrix[env_idx].fill(0)
                 env_terminations[env_idx, :] = False
-                self._robot0_death_step[env_idx] = -1
+                self._robot_death_step[env_idx].fill(-1)
+                self._monopoly_step[env_idx] = -1
+                self._episode_dist_sum[env_idx] = 0
+                self._episode_dist_steps[env_idx] = 0
 
                 # Save models periodically (skip the very first step = offset itself)
                 new_ep = self.total_episodes - self.episode_offset
@@ -1042,7 +1473,14 @@ class VectorizedMultiAgentTrainer:
                         if len(agent_memory) >= self.args.replay_start_size:
                             batch = self.sample_batch(agent_id)
                             if batch is not None:
-                                self.agents[agent_id].train_step(batch)
+                                if self.use_per:
+                                    *batch6, indices, weights = batch
+                                    train_stats = self.agents[agent_id].train_step(tuple(batch6), weights=weights)
+                                    td_errors = train_stats.get('td_errors')
+                                    if td_errors is not None:
+                                        agent_memory.update_priorities(indices, td_errors)
+                                else:
+                                    self.agents[agent_id].train_step(batch)
 
                 # Update target networks
                 if self.global_step % self.args.target_update_frequency == 0:
@@ -1113,6 +1551,8 @@ def main():
     parser.add_argument("--e-charge", type=float, default=1.5, help="Energy gain per charge")
     parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision")
     parser.add_argument("--e-boundary", type=int, default=50, help="Energy loss when hitting wall")
+    parser.add_argument("--energy-cap", type=float, default=None, help="Max energy (None=no cap, overcharge allowed)")
+    parser.add_argument("--e-decay", type=float, default=0.0, help="Passive energy drain per step for all alive robots")
     parser.add_argument("--max-episode-steps", type=int, default=500, help="Maximum steps per episode")
     parser.add_argument("--charger-positions", type=str, default=None,
                        help='Charger positions as "y1,x1;y2,x2;..."')
@@ -1124,7 +1564,9 @@ def main():
     parser.add_argument("--dust-reward-scale", type=float, default=0.05, help="Dust reward multiplier")
     parser.add_argument("--no-dust", action="store_true", default=False, help="Disable dust system (removes n² obs dimensions)")
     parser.add_argument("--exclusive-charging", action="store_true", default=False,
-                        help="充電座獨佔模式：有其他 robot 在 3x3 範圍內時充電無效")
+                        help="充電座獨佔模式：有其他 robot 在範圍內時充電無效")
+    parser.add_argument("--charger-range", type=int, default=1,
+                        help="充電範圍：0=只有站在充電座上，1=3×3（預設）")
     parser.add_argument("--scripted-robots", type=str, default="",
                         help='Comma-separated robot IDs to fix as STAY (no training), e.g. "1" or "1,2"')
     parser.add_argument("--random-robots", type=str, default="",
@@ -1135,8 +1577,21 @@ def main():
                         help='Comma-separated robot IDs that use flee heuristic (no training), e.g. "1"')
     parser.add_argument("--random-start-robots", type=str, default="",
                         help='Comma-separated robot IDs to randomize start position each episode, e.g. "0"')
+    parser.add_argument("--robot-start-positions", type=str, default=None,
+                        help='Fixed start positions as "y0,x0;y1,x1;..." (overrides corner defaults), e.g. "0,0;3,3"')
     parser.add_argument("--load-model-dir", type=str, default=None,
                         help='Load pre-trained models from this dir to continue training (curriculum phase)')
+
+    # Agent type system (trait.md control experiment)
+    parser.add_argument("--agent-types-mode", type=str, default="off", choices=["off", "observe"],
+                        help='Agent type visibility: off=no type info (pad 0), observe=type visible in obs')
+    parser.add_argument("--triangle-agent-id", type=int, default=None,
+                        help='Which agent is triangle (others are circle). None=all circle.')
+    parser.add_argument("--heterotype-charge-mode", type=str, default="off",
+                        choices=["off", "local-penalty"],
+                        help='Heterotype charging penalty: off=no penalty, local-penalty=mixed types reduce charging')
+    parser.add_argument("--heterotype-charge-factor", type=float, default=1.0,
+                        help='Charging efficiency when mixed types share a charger (0.7=70%%, 1.0=no penalty)')
 
     # DQN hyperparameters
     parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
@@ -1148,28 +1603,55 @@ def main():
     parser.add_argument("--epsilon", type=float, default=0.2, help="Fixed epsilon")
     parser.add_argument("--epsilon-start", type=float, default=1.0, help="Starting epsilon for decay")
     parser.add_argument("--epsilon-end", type=float, default=0.01, help="Minimum epsilon")
-    parser.add_argument("--epsilon-decay", type=float, default=0.995, help="Epsilon decay rate")
+    parser.add_argument("--epsilon-decay", type=float, default=0.995, help="Epsilon decay rate (only used for exponential schedule)")
+    parser.add_argument("--epsilon-schedule", type=str, default="linear", choices=["linear", "exponential"],
+                        help="Epsilon decay schedule: linear (default) or exponential")
 
     parser.add_argument("--memory-size", type=int, default=100000, help="Replay buffer size")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
     parser.add_argument("--replay-start-size", type=int, default=1000, help="Minimum buffer size before training")
     parser.add_argument("--target-update-frequency", type=int, default=1000, help="Target network update frequency")
 
+    # Rainbow DQN components
+    parser.add_argument("--dueling", action=argparse.BooleanOptionalAction, default=True,
+                        help="Enable Dueling DQN (V/A stream split, use --no-dueling to disable)")
+    parser.add_argument("--noisy", action=argparse.BooleanOptionalAction, default=True,
+                        help="Enable NoisyNet (replaces epsilon-greedy, use --no-noisy to disable)")
+    parser.add_argument("--c51", action=argparse.BooleanOptionalAction, default=True,
+                        help="Enable C51 distributional DQN (use --no-c51 to disable)")
+    parser.add_argument("--num-atoms", type=int, default=51,
+                        help="Number of atoms for C51 distributional DQN")
+    parser.add_argument("--v-min", type=float, default=-100.0,
+                        help="C51 minimum value support")
+    parser.add_argument("--v-max", type=float, default=100.0,
+                        help="C51 maximum value support")
+
+    # Prioritized Experience Replay (PER)
+    parser.add_argument("--per", action=argparse.BooleanOptionalAction, default=True,
+                        help="Enable Prioritized Experience Replay (use --no-per to disable)")
+    parser.add_argument("--per-alpha", type=float, default=0.6,
+                        help="PER priority exponent α (0=uniform, 1=fully prioritized)")
+    parser.add_argument("--per-beta-start", type=float, default=0.4,
+                        help="PER IS-weight exponent β starting value (anneals to 1.0)")
+    parser.add_argument("--per-beta-steps", type=int, default=100000,
+                        help="Global steps over which β anneals from per-beta-start to 1.0")
+
     # Vectorized training parameters
-    parser.add_argument("--num-envs", type=int, default=8, help="Number of parallel environments")
+    parser.add_argument("--num-envs", type=int, default=256, help="Number of parallel environments")
     parser.add_argument("--num-workers", type=int, default=1,
                         help="Subprocess workers for env parallelism (1=disabled, N>1=SubprocVecEnv). "
                              "num_envs must be divisible by num_workers. "
                              "建議: --num-envs 32 --num-workers 8 (8 cores, 4 envs each)")
     parser.add_argument("--train-frequency", type=int, default=4, help="Train every N steps")
-    parser.add_argument("--batch-env", action="store_true", default=False,
-                        help="使用全 numpy 批次環境（BatchRobotVacuumEnv），大幅加速 env_step")
+    parser.add_argument("--batch-env", action=argparse.BooleanOptionalAction, default=True,
+                        help="使用全 numpy 批次環境（BatchRobotVacuumEnv），大幅加速 env_step (use --no-batch-env to disable)")
 
     # Training settings
     parser.add_argument("--num-episodes", type=int, default=10000, help="Number of training episodes")
     parser.add_argument("--save-frequency", type=int, default=1000, help="Model save frequency (episodes)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--use-torch-compile", action="store_true", help="Enable torch.compile")
+    parser.add_argument("--use-torch-compile", action=argparse.BooleanOptionalAction, default=True,
+                        help="Enable torch.compile (use --no-use-torch-compile to disable)")
 
     # Wandb and logging
     parser.add_argument("--wandb-entity", type=str, default=None, help="Wandb entity")
@@ -1267,11 +1749,17 @@ def main():
         if args.charger_positions:
             eval_cmd.extend(["--charger-positions", args.charger_positions])
 
+        # Add robot start positions if specified
+        if getattr(args, 'robot_start_positions', None):
+            eval_cmd.extend(["--robot-start-positions", args.robot_start_positions])
+
         # Add boolean flags
         if args.no_dust:
             eval_cmd.append("--no-dust")
         if args.exclusive_charging:
             eval_cmd.append("--exclusive-charging")
+        if args.charger_range != 1:
+            eval_cmd.extend(["--charger-range", str(args.charger_range)])
         if args.scripted_robots:
             eval_cmd.extend(["--scripted-robots", args.scripted_robots])
         if args.random_robots:
@@ -1280,6 +1768,30 @@ def main():
             eval_cmd.extend(["--safe-random-robots", args.safe_random_robots])
         if args.flee_robots:
             eval_cmd.extend(["--flee-robots", args.flee_robots])
+
+        # Add agent type flags
+        if args.agent_types_mode != 'off':
+            eval_cmd.extend(["--agent-types-mode", args.agent_types_mode])
+        if args.triangle_agent_id is not None:
+            eval_cmd.extend(["--triangle-agent-id", str(args.triangle_agent_id)])
+        if args.heterotype_charge_mode != 'off':
+            eval_cmd.extend(["--heterotype-charge-mode", args.heterotype_charge_mode])
+            eval_cmd.extend(["--heterotype-charge-factor", str(args.heterotype_charge_factor)])
+        if args.energy_cap is not None:
+            eval_cmd.extend(["--energy-cap", str(args.energy_cap)])
+        if args.e_decay > 0:
+            eval_cmd.extend(["--e-decay", str(args.e_decay)])
+
+        # Add Rainbow DQN flags
+        if args.dueling:
+            eval_cmd.append("--dueling")
+        if args.noisy:
+            eval_cmd.append("--noisy")
+        if args.c51:
+            eval_cmd.append("--c51")
+            eval_cmd.extend(["--num-atoms", str(args.num_atoms)])
+            eval_cmd.extend(["--v-min", str(args.v_min)])
+            eval_cmd.extend(["--v-max", str(args.v_max)])
 
         # Add wandb settings
         if args.wandb_entity:

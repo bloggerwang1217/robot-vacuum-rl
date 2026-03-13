@@ -46,6 +46,13 @@ class BatchRobotVacuumEnv:
         self.e_collision  = float(env_kwargs.get('e_collision', 3))
         self.e_boundary   = float(env_kwargs.get('e_boundary', 50))
         self.exclusive_charging = bool(env_kwargs.get('exclusive_charging', False))
+        self.charger_range = int(env_kwargs.get('charger_range', 1))
+        self.heterotype_charge_mode = env_kwargs.get('heterotype_charge_mode', 'off')
+        self.heterotype_charge_factor = float(env_kwargs.get('heterotype_charge_factor', 1.0))
+        self.energy_cap = env_kwargs.get('energy_cap', None)
+        if self.energy_cap is not None:
+            self.energy_cap = float(self.energy_cap)
+        self.e_decay = float(env_kwargs.get('e_decay', 0.0))
         speeds = env_kwargs.get('robot_speeds', None) or [1] * R
         self.robot_speeds = list(speeds)
 
@@ -86,8 +93,16 @@ class BatchRobotVacuumEnv:
                                            dust_rate * cdrr, dust_rate).astype(np.float32)
             self.dust_reward_scale = float(env_kwargs.get('dust_reward_scale', 0.05))
 
+        # ── Agent type system (trait.md) ──────────────────────────────────
+        self.agent_types_mode = env_kwargs.get('agent_types_mode', 'off')
+        triangle_id = env_kwargs.get('triangle_agent_id', None)
+        self.agent_types = np.zeros(R, dtype=np.float32)
+        if triangle_id is not None and 0 <= triangle_id < R:
+            self.agent_types[triangle_id] = 1.0
+
         # ── Observation dim ────────────────────────────────────────────────
-        obs_dim = 3 + 4 + (R - 1) * 3 + 2 * self.C
+        # +1 self_type, +1 per other robot's type (always present, padded 0 when mode=off)
+        obs_dim = 3 + 1 + 4 + (R - 1) * 4 + 2 * self.C
         if self.dust_enabled:
             obs_dim += n * n
         self.obs_dim = obs_dim
@@ -105,9 +120,14 @@ class BatchRobotVacuumEnv:
         self.random_start_robots = set(env_kwargs.get('random_start_robots', set()) or set())
         all_corners = [(0, 0), (0, n-1), (n-1, 0), (n-1, n-1)]
         corner_q = list(all_corners)
+        manual_starts = env_kwargs.get('robot_start_positions', {})
         self._fixed_starts: Dict[int, Tuple[int, int]] = {}
+        for i, pos in manual_starts.items():
+            self._fixed_starts[i] = pos
+            if pos in corner_q:
+                corner_q.remove(pos)
         for i in range(R):
-            if i not in self.random_start_robots:
+            if i not in self._fixed_starts and i not in self.random_start_robots:
                 self._fixed_starts[i] = corner_q.pop(0)
 
         # ── State arrays (allocated once) ──────────────────────────────────
@@ -254,10 +274,11 @@ class BatchRobotVacuumEnv:
         ry = self.pos[:, rid, 0]    # (N,) current y
         rx = self.pos[:, rid, 1]    # (N,) current x
 
+        cr = self.charger_range
         for cy, cx in self.charger_positions:
             in_range = (self.alive[:, rid]
-                        & (np.abs(ry - cy) <= 1)
-                        & (np.abs(rx - cx) <= 1))   # (N,)
+                        & (np.abs(ry - cy) <= cr)
+                        & (np.abs(rx - cx) <= cr))   # (N,)
             if not np.any(in_range):
                 continue
 
@@ -267,13 +288,29 @@ class BatchRobotVacuumEnv:
                 can_charge = in_range & (n_alive <= 1)
                 self.energy[can_charge, rid] += self.e_charge
             else:
-                # Charge divided among all robots in 3×3 range
+                # Charge divided among all robots in charger range
                 count = np.zeros(N, dtype=np.float32)
                 for k in range(R):
                     count += (self.alive[:, k]
-                              & (np.abs(self.pos[:, k, 0] - cy) <= 1)
-                              & (np.abs(self.pos[:, k, 1] - cx) <= 1)).astype(np.float32)
+                              & (np.abs(self.pos[:, k, 0] - cy) <= cr)
+                              & (np.abs(self.pos[:, k, 1] - cx) <= cr)).astype(np.float32)
                 charge_amt = self.e_charge / np.maximum(count, 1.0)   # (N,)
+                # Heterotype penalty: mixed types in same charger range
+                if self.heterotype_charge_mode == 'local-penalty':
+                    # Check per-env if charger occupants are mixed type
+                    # has_circle[e] = any circle alive in range, has_triangle[e] = any triangle in range
+                    has_circle = np.zeros(N, dtype=bool)
+                    has_triangle = np.zeros(N, dtype=bool)
+                    for k in range(R):
+                        k_in_range = (self.alive[:, k]
+                                      & (np.abs(self.pos[:, k, 0] - cy) <= cr)
+                                      & (np.abs(self.pos[:, k, 1] - cx) <= cr))
+                        if self.agent_types[k] == 0:
+                            has_circle |= k_in_range
+                        else:
+                            has_triangle |= k_in_range
+                    is_mixed = has_circle & has_triangle  # (N,)
+                    charge_amt = np.where(is_mixed, charge_amt * self.heterotype_charge_factor, charge_amt)
                 self.energy[in_range, rid] += charge_amt[in_range]
 
         # ── Dust harvest ──────────────────────────────────────────────────
@@ -287,11 +324,16 @@ class BatchRobotVacuumEnv:
                 self.dust_collected[env_idx_live, rid] = harvested
                 self.dust[env_idx_live, ys, xs] = 0.0
 
+        # ── Energy cap (after charging) ──────────────────────────────────
+        if self.energy_cap is not None:
+            self.energy[:, rid] = np.minimum(self.energy[:, rid], self.energy_cap)
+
         # ── Rewards ───────────────────────────────────────────────────────
-        rewards = (self.energy[:, rid] - self.prev_energy[:, rid]) * 0.05
+        # 血量比例獎勵：活著且血量越高，每步 reward 越多
+        max_e = self.init_energies[rid]
+        hp_ratio = np.where(self.alive[:, rid], self.energy[:, rid] / max_e, 0.0)
+        rewards = hp_ratio.astype(np.float32) * 0.1
         rewards -= self.died_this_step[:, rid].astype(np.float32) * 100.0
-        if self.dust_enabled:
-            rewards += self.dust_collected[:, rid] * self.dust_reward_scale
 
         # ── Outputs ───────────────────────────────────────────────────────
         terminated = ~self.alive[:, rid]                # (N,) bool
@@ -317,6 +359,13 @@ class BatchRobotVacuumEnv:
             done_envs: list of env indices that finished this step
         """
         self.steps += 1
+
+        # Passive energy decay (all alive robots)
+        if self.e_decay > 0:
+            self.energy -= self.e_decay * self.alive.astype(np.float32)
+            self.energy = np.maximum(self.energy, 0.0)
+            just_died = self.alive & (self.energy <= 0)
+            self.alive[just_died] = False
 
         if self.dust_enabled:
             self._update_dust()
@@ -358,29 +407,40 @@ class BatchRobotVacuumEnv:
         obs[:, col] = self.energy[:, rid] * inv_max
         col += 1
 
-        # 3. Wall indicators
+        # 3. Self type (0 padding when mode=off, actual type when mode=observe)
+        if self.agent_types_mode == 'observe':
+            obs[:, col] = self.agent_types[rid]
+        else:
+            obs[:, col] = 0.0
+        col += 1
+
+        # 4. Wall indicators
         obs[:, col  ] = (self.pos[:, rid, 0] == 0    ).astype(np.float32)  # wall_up
         obs[:, col+1] = (self.pos[:, rid, 0] == n - 1).astype(np.float32)  # wall_down
         obs[:, col+2] = (self.pos[:, rid, 1] == 0    ).astype(np.float32)  # wall_left
         obs[:, col+3] = (self.pos[:, rid, 1] == n - 1).astype(np.float32)  # wall_right
         col += 4
 
-        # 4. Other robots (dx, dy, energy)
+        # 5. Other robots (dx, dy, energy, type)
         for j in range(R):
             if j == rid:
                 continue
             obs[:, col  ] = (self.pos[:, j, 1] - self.pos[:, rid, 1]).astype(np.float32) * inv
             obs[:, col+1] = (self.pos[:, j, 0] - self.pos[:, rid, 0]).astype(np.float32) * inv
             obs[:, col+2] = self.energy[:, j] * inv_max
-            col += 3
+            if self.agent_types_mode == 'observe':
+                obs[:, col+3] = self.agent_types[j]
+            else:
+                obs[:, col+3] = 0.0
+            col += 4
 
-        # 5. Charger offsets (dx, dy)
+        # 6. Charger offsets (dx, dy)
         for cy, cx in self.charger_positions:
             obs[:, col  ] = (cx - self.pos[:, rid, 1]).astype(np.float32) * inv
             obs[:, col+1] = (cy - self.pos[:, rid, 0]).astype(np.float32) * inv
             col += 2
 
-        # 6. Dust grid (row-major y→x, normalized per cell)
+        # 7. Dust grid (row-major y→x, normalized per cell)
         if self.dust_enabled:
             dust_norm = self.dust / self.dust_max_grid[np.newaxis, :, :]   # (N, n, n)
             obs[:, col:col + n * n] = dust_norm.reshape(N, n * n)

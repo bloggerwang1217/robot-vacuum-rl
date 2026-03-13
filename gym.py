@@ -58,8 +58,17 @@ class RobotVacuumGymEnv:
                 'dust_reward_scale': kwargs.get('dust_reward_scale', 0.05),
                 'dust_enabled': kwargs.get('dust_enabled', True),
                 'exclusive_charging': kwargs.get('exclusive_charging', False),
+                'charger_range': kwargs.get('charger_range', 1),
                 'robot_speeds': kwargs.get('robot_speeds', None),
                 'random_start_robots': kwargs.get('random_start_robots', set()),
+                'robot_start_positions': kwargs.get('robot_start_positions', {}),
+                'agent_types_mode': kwargs.get('agent_types_mode', 'off'),
+                'triangle_agent_id': kwargs.get('triangle_agent_id', None),
+                'heterotype_charge_mode': kwargs.get('heterotype_charge_mode', 'off'),
+                'heterotype_charge_factor': kwargs.get('heterotype_charge_factor', 1.0),
+                'energy_cap': kwargs.get('energy_cap', None),
+                'e_decay': kwargs.get('e_decay', 0.0),
+                'legacy_obs': kwargs.get('legacy_obs', False),
             }
 
         # 創建底層環境
@@ -73,13 +82,27 @@ class RobotVacuumGymEnv:
         self.dust_enabled = config.get('dust_enabled', True)
         self.dust_reward_scale = config.get('dust_reward_scale', 0.05)
 
+        # Agent type system (trait.md)
+        self.agent_types_mode = config.get('agent_types_mode', 'off')  # 'off' or 'observe'
+        # legacy obs format: no self_type, no other_type (obs_dim = 3+4+(N-1)*3+C*2 [+n²])
+        self.legacy_obs = config.get('legacy_obs', False)
+        triangle_id = config.get('triangle_agent_id', None)
+        # Build type array: 0=circle, 1=triangle
+        self.agent_types = np.zeros(self.n_robots, dtype=np.float32)
+        if triangle_id is not None and 0 <= triangle_id < self.n_robots:
+            self.agent_types[triangle_id] = 1.0
+
         # 定義動作空間 (每個機器人: 0-4)
         self.action_space = spaces.Discrete(5)
 
         # 定義觀測空間 (每個機器人)
-        # [自身位置2 + 自身能量1 + 其他機器人(n_robots-1)*3 + 充電座2*N + 全地圖灰塵n*n (若啟用)]
+        # [自身位置2 + 自身能量1 + (自身type 1) + 牆壁4 + 其他機器人(n_robots-1)*(3+1) + 充電座2*N + 全地圖灰塵n*n (若啟用)]
+        # type 欄位在 mode=off 時填 0 (padding)，mode=observe 時填實際 type
         num_chargers = len(self.env.charger_positions)
-        obs_dim = 3 + 4 + (self.n_robots - 1) * 3 + 2 * num_chargers  # +4 for wall indicators
+        if self.legacy_obs:
+            obs_dim = 3 + 4 + (self.n_robots - 1) * 3 + 2 * num_chargers  # v1: no type dims
+        else:
+            obs_dim = 3 + 1 + 4 + (self.n_robots - 1) * 4 + 2 * num_chargers  # v2: +1 self_type, +1 per other
         if self.dust_enabled:
             obs_dim += self.n * self.n
         self.observation_space = spaces.Box(
@@ -171,12 +194,13 @@ class RobotVacuumGymEnv:
         """
         為每個機器人生成觀測向量
 
-        觀測向量結構 (3 + 4 + (N-1)*3 + C*2 維，N=機器人數量，C=充電座數量):
+        觀測向量結構 (3 + 1 + 4 + (N-1)*4 + C*2 維，N=機器人數量，C=充電座數量):
         - [0:2]: 自身位置 (x, y) 正規化到 [0, 1]
         - [2:3]: 自身能量正規化到 [0, 1]
-        - [3:7]: 牆壁指示器 [wall_up, wall_down, wall_left, wall_right] (0 or 1)
-        - [7:7+(N-1)*3]: 其他機器人的相對狀態 (dx, dy, energy) * (N-1)
-        - [7+(N-1)*3:]: C個充電座的相對位置 (dx, dy) * C
+        - [3:4]: 自身 type (0=circle, 1=triangle; mode=off 時為 0)
+        - [4:8]: 牆壁指示器 [wall_up, wall_down, wall_left, wall_right] (0 or 1)
+        - [8:8+(N-1)*4]: 其他機器人的相對狀態 (dx, dy, energy, type) * (N-1)
+        - [8+(N-1)*4:]: C個充電座的相對位置 (dx, dy) * C
         """
         observations = {}
         robots = state['robots']
@@ -203,13 +227,21 @@ class RobotVacuumGymEnv:
             # 2. 自身能量 (用全域最大血量正規化)
             obs.append(robot['energy'] / global_max_energy)
 
-            # 3. 牆壁指示器 (1.0 = 該方向緊鄰邊界，不能移動)
+            # 3. 自身 type (mode=off 時填 0 padding, mode=observe 時填實際 type)
+            #    legacy_obs 模式下跳過此欄位
+            if not self.legacy_obs:
+                if self.agent_types_mode == 'observe':
+                    obs.append(self.agent_types[i])
+                else:
+                    obs.append(0.0)
+
+            # 4. 牆壁指示器 (1.0 = 該方向緊鄰邊界，不能移動)
             obs.append(1.0 if robot['y'] == 0         else 0.0)  # wall_up
             obs.append(1.0 if robot['y'] == self.n - 1 else 0.0)  # wall_down
             obs.append(1.0 if robot['x'] == 0         else 0.0)  # wall_left
             obs.append(1.0 if robot['x'] == self.n - 1 else 0.0)  # wall_right
 
-            # 4. 其他機器人的相對狀態
+            # 5. 其他機器人的相對狀態
             for j in range(self.n_robots):
                 if i == j:
                     continue
@@ -222,16 +254,24 @@ class RobotVacuumGymEnv:
                 # 能量 (用全域最大血量正規化)
                 energy = other['energy'] / global_max_energy
 
-                obs.extend([dx, dy, energy])
+                if self.legacy_obs:
+                    obs.extend([dx, dy, energy])
+                else:
+                    # type (mode=off 時填 0 padding)
+                    if self.agent_types_mode == 'observe':
+                        other_type = self.agent_types[j]
+                    else:
+                        other_type = 0.0
+                    obs.extend([dx, dy, energy, other_type])
 
-            # 4. 充電座相對位置
+            # 6. 充電座相對位置
             for charger_y, charger_x in self.env.charger_positions:
                 # 相對位置 (正規化到 [-1, 1])
                 dx = (charger_x - robot['x']) / (self.n - 1) if self.n > 1 else 0.0
                 dy = (charger_y - robot['y']) / (self.n - 1) if self.n > 1 else 0.0
                 obs.extend([dx, dy])
 
-            # 5. 全地圖灰塵（每格用各自上限正規化到 [0, 1]，row-major y→x）
+            # 7. 全地圖灰塵（每格用各自上限正規化到 [0, 1]，row-major y→x）
             if self.dust_enabled:
                 dust_grid = state['dust_grid']
                 d_max_normal = self.env.dust_max
@@ -250,7 +290,7 @@ class RobotVacuumGymEnv:
         計算每個機器人的獎勵
 
         獎勵結構:
-        1. 能量變化獎勵: energy_delta * 0.05
+        1. 血量比例獎勵: (current_energy / self_max_energy) * 0.01 per step
         2. 死亡懲罰: -100.0
         """
         rewards = {}
@@ -263,17 +303,15 @@ class RobotVacuumGymEnv:
 
             reward = 0.0
 
-            # 1. 能量變化獎勵
-            energy_delta = robot['energy'] - prev_robot['energy']
-            reward += energy_delta * 0.05
+            # 1. 血量比例獎勵：活著且血量越高，每步 reward 越多
+            if robot['is_active']:
+                max_e = robot['max_energy']
+                if max_e > 0:
+                    reward += (robot['energy'] / max_e) * 0.1
 
             # 2. 死亡懲罰
             if not robot['is_active'] and prev_robot['is_active']:
                 reward -= 100.0
-
-            # 3. 灰塵獎勵
-            if self.dust_enabled:
-                reward += robot['dust_collected_this_step'] * self.dust_reward_scale
 
             rewards[agent_id] = reward
 
@@ -324,6 +362,10 @@ class RobotVacuumGymEnv:
                 info_dict[f'collided_by_robot_{j}'] = collided_by_counts.get(j, 0)
 
             infos[agent_id] = info_dict
+
+        # Step-level charger log (heterotype experiment)
+        if 'charger_log' in state:
+            infos['charger_log'] = state['charger_log']
 
         return infos
 

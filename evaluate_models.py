@@ -12,7 +12,7 @@ import wandb
 from typing import Dict, List, Tuple
 
 # Import the DQN network and agent components
-from dqn import DQN, init_weights
+from dqn import DQN, init_weights, build_network
 from legacy.train_dqn import IndependentDQNAgent
 
 # Import the Gym-wrapped environment
@@ -104,10 +104,23 @@ class ModelEvaluator:
             dust_reward_scale=args.dust_reward_scale,
             dust_enabled=not args.no_dust,
             exclusive_charging=args.exclusive_charging,
+            charger_range=getattr(args, 'charger_range', 1),
             robot_speeds=robot_speeds,
             random_start_robots=set(
                 int(x) for x in getattr(args, 'random_start_robots', '').split(',') if x.strip()
             ),
+            robot_start_positions={
+                i: tuple(map(int, pos_str.split(',')))
+                for i, pos_str in enumerate(getattr(args, 'robot_start_positions', None).split(';'))
+                if getattr(args, 'robot_start_positions', None)
+            } if getattr(args, 'robot_start_positions', None) else {},
+            agent_types_mode=getattr(args, 'agent_types_mode', 'off'),
+            legacy_obs=getattr(args, 'legacy_obs', False),
+            triangle_agent_id=getattr(args, 'triangle_agent_id', None),
+            heterotype_charge_mode=getattr(args, 'heterotype_charge_mode', 'off'),
+            heterotype_charge_factor=getattr(args, 'heterotype_charge_factor', 1.0),
+            energy_cap=getattr(args, 'energy_cap', None),
+            e_decay=getattr(args, 'e_decay', 0.0),
         )
 
         # Initialize agents (only for the robots that exist)
@@ -116,6 +129,15 @@ class ModelEvaluator:
 
         observation_dim = self.env.observation_space.shape[0]  # Get actual observation dim from env
         action_dim = 5  # UP, DOWN, LEFT, RIGHT, STAY
+
+        # Rainbow DQN flags
+        use_dueling = getattr(args, 'dueling', False)
+        use_noisy = getattr(args, 'noisy', False)
+        use_c51 = getattr(args, 'c51', False)
+        num_atoms = getattr(args, 'num_atoms', 51)
+        v_min = getattr(args, 'v_min', -100.0)
+        v_max = getattr(args, 'v_max', 100.0)
+        use_rainbow = use_dueling or use_noisy or use_c51
 
         # Create a dummy args object for agent initialization
         dummy_args = argparse.Namespace(
@@ -128,14 +150,40 @@ class ModelEvaluator:
             save_dir='.'  # Dummy save directory
         )
 
-        for agent_id in self.agent_ids:
-            self.agents[agent_id] = IndependentDQNAgent(
-                agent_id=agent_id,
-                observation_dim=observation_dim,
-                action_dim=action_dim,
-                device=self.device,
-                args=dummy_args
-            )
+        if use_rainbow:
+            # Use build_network for Rainbow variants
+            for agent_id in self.agent_ids:
+                q_net = build_network(
+                    action_dim, observation_dim,
+                    dueling=use_dueling, noisy=use_noisy,
+                    c51=use_c51, num_atoms=num_atoms,
+                    v_min=v_min, v_max=v_max,
+                ).to(self.device)
+                # Wrap in a simple namespace-like agent object
+                agent = argparse.Namespace(
+                    agent_id=agent_id,
+                    q_net=q_net,
+                    target_net=None,
+                    device=self.device,
+                    epsilon=args.eval_epsilon,
+                    eval_epsilon=args.eval_epsilon,
+                    action_dim=action_dim,
+                    observation_dim=observation_dim,
+                    use_noisy=use_noisy,
+                )
+                agent.load = lambda fp, _net=q_net, _dev=self.device: _net.load_state_dict(
+                    torch.load(fp, map_location=_dev, weights_only=True))
+                agent.select_action = None  # will use q_net directly
+                self.agents[agent_id] = agent
+        else:
+            for agent_id in self.agent_ids:
+                self.agents[agent_id] = IndependentDQNAgent(
+                    agent_id=agent_id,
+                    observation_dim=observation_dim,
+                    action_dim=action_dim,
+                    device=self.device,
+                    args=dummy_args
+                )
 
         # Scripted robots: always play STAY during eval
         scripted_str = getattr(args, 'scripted_robots', '')
@@ -272,8 +320,8 @@ class ModelEvaluator:
                         agent_q_values = {action_names[i]: 0.0 for i in range(len(action_names))}
                         print(f"  {agent_id}{turn_label} [SAFE_RANDOM] Selected: {action_names[action]}")
                     elif is_flee:
-                        dx = obs[7]; dy = obs[8]
-                        wall_up, wall_down, wall_left, wall_right = obs[3], obs[4], obs[5], obs[6]
+                        dx = obs[8]; dy = obs[9]
+                        wall_up, wall_down, wall_left, wall_right = obs[4], obs[5], obs[6], obs[7]
                         blocked = {0: wall_up, 1: wall_down, 2: wall_left, 3: wall_right}
                         h_pref = 2 if dx > 0 else (3 if dx < 0 else 4)
                         v_pref = 0 if dy > 0 else (1 if dy < 0 else 4)
@@ -676,6 +724,13 @@ class ModelEvaluator:
             max_total_dust = 0.0
 
         # Build replay data structure
+        # Agent type labels for replay
+        type_names = {0.0: "circle", 1.0: "triangle"}
+        agent_type_map = {
+            f"robot_{i}": type_names.get(self.env.agent_types[i], "circle")
+            for i in range(self.num_robots)
+        }
+
         replay_data = {
             "config": {
                 "grid_size": self.args.env_n,
@@ -685,6 +740,10 @@ class ModelEvaluator:
                     f"robot_{i}": self.robot_energies[i]
                     for i in range(self.num_robots)
                 },
+                "agent_types_mode": getattr(self.args, 'agent_types_mode', 'off'),
+                "agent_types": agent_type_map,
+                "heterotype_charge_mode": getattr(self.args, 'heterotype_charge_mode', 'off'),
+                "heterotype_charge_factor": getattr(self.args, 'heterotype_charge_factor', 1.0),
                 "parameters": {
                     "e_move": self.args.e_move,
                     "e_collision": self.args.e_collision,
@@ -770,6 +829,12 @@ class ModelEvaluator:
                         })
 
             step_data["events"] = events
+
+            # Charger log (heterotype experiment)
+            charger_log = infos.get('charger_log', None)
+            if charger_log:
+                step_data["charger_log"] = charger_log
+
             replay_data["steps"].append(step_data)
 
         # Save to JSON file
@@ -883,6 +948,20 @@ def main():
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor (should match training)")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility (None for non-deterministic)")
 
+    # Rainbow DQN components (must match training flags)
+    parser.add_argument("--dueling", action="store_true", default=False,
+                        help="Enable Dueling DQN (must match training)")
+    parser.add_argument("--noisy", action="store_true", default=False,
+                        help="Enable NoisyNet (must match training)")
+    parser.add_argument("--c51", action="store_true", default=False,
+                        help="Enable C51 distributional DQN (must match training)")
+    parser.add_argument("--num-atoms", type=int, default=51,
+                        help="Number of atoms for C51 (must match training)")
+    parser.add_argument("--v-min", type=float, default=-100.0,
+                        help="C51 minimum value support (must match training)")
+    parser.add_argument("--v-max", type=float, default=100.0,
+                        help="C51 maximum value support (must match training)")
+
     # Rendering (default: no rendering for long simulations)
     parser.add_argument("--render", action="store_true",
                        help="Enable pygame rendering (default: disabled)")
@@ -892,6 +971,8 @@ def main():
     parser.add_argument("--wandb-project", type=str, default="robot-vacuum-eval", help="Wandb project name")
     parser.add_argument("--wandb-run-name", type=str, default="long-simulation", help="Wandb run name")
     parser.add_argument("--wandb-mode", type=str, default="online", help="Wandb mode (online/offline/disabled)")
+    parser.add_argument("--charger-range", type=int, default=1,
+                        help="充電範圍：0=只有站在充電座上，1=3×3（預設）")
     parser.add_argument("--exclusive-charging", action="store_true", default=False,
                         help="充電座獨佔模式：有其他 robot 在 3x3 範圍內時充電無效")
     parser.add_argument("--scripted-robots", type=str, default="",
@@ -904,6 +985,31 @@ def main():
                         help='Comma-separated robot IDs that use flee heuristic during eval, e.g. "1"')
     parser.add_argument("--random-start-robots", type=str, default="",
                         help='Comma-separated robot IDs to randomize start position each episode, e.g. "0"')
+    parser.add_argument("--robot-start-positions", type=str, default=None,
+                        help='Fixed start positions as "y0,x0;y1,x1;..." (overrides corner defaults), e.g. "0,0;3,3"')
+
+    # Legacy obs compatibility
+    parser.add_argument("--legacy-obs", action="store_true", default=False,
+                        help='Use legacy obs format (no self_type/other_type dims) for old checkpoints')
+
+    # Agent type system (trait.md control experiment)
+    parser.add_argument("--agent-types-mode", type=str, default="off", choices=["off", "observe"],
+                        help='Agent type visibility: off=no type info (pad 0), observe=type visible in obs')
+    parser.add_argument("--triangle-agent-id", type=int, default=None,
+                        help='Which agent is triangle (others are circle). None=all circle.')
+
+    # Heterotype charging penalty (energy.md)
+    parser.add_argument("--heterotype-charge-mode", type=str, default="off",
+                        choices=["off", "local-penalty"],
+                        help='Heterotype charging mode: off or local-penalty')
+    parser.add_argument("--heterotype-charge-factor", type=float, default=1.0,
+                        help='Charging efficiency multiplier when mixed types share a charger (default: 1.0)')
+
+    # Energy cap & decay (realistic mortality)
+    parser.add_argument("--energy-cap", type=float, default=None,
+                        help='Max energy (None=no cap, overcharge allowed)')
+    parser.add_argument("--e-decay", type=float, default=0.0,
+                        help='Passive energy drain per step for all alive robots')
 
     args = parser.parse_args()
 

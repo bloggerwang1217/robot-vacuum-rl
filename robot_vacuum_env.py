@@ -87,12 +87,28 @@ class RobotVacuumEnv:
         self.charger_dust_max_ratio = config.get('charger_dust_max_ratio', 0.3)   # 充電座格上限倍率
         self.charger_dust_rate_ratio = config.get('charger_dust_rate_ratio', 0.5) # 充電座格成長率倍率
         self.epsilon = config.get('epsilon', 0.2)  # 預設探索率 20%
-        # 獨佔充電：有其他 robot 在 3x3 範圍內時充電無效
+        # 獨佔充電：有其他 robot 在範圍內時充電無效
         self.exclusive_charging = config.get('exclusive_charging', False)
+        # 充電範圍：0=只有站在充電座上才充電，1=3×3 範圍（預設）
+        self.charger_range = config.get('charger_range', 1)
+        # Heterotype charging penalty
+        self.heterotype_charge_mode = config.get('heterotype_charge_mode', 'off')
+        self.heterotype_charge_factor = config.get('heterotype_charge_factor', 1.0)
+        # Energy cap: None = no cap (overcharge allowed), value = max energy
+        self.energy_cap = config.get('energy_cap', None)
+        # Energy decay: per-step passive energy drain for all alive robots
+        self.e_decay = config.get('e_decay', 0.0)
+        # Agent types (needed for heterotype check)
+        triangle_id = config.get('triangle_agent_id', None)
+        self.agent_types = [0] * self.num_robots  # 0=circle
+        if triangle_id is not None and 0 <= triangle_id < self.num_robots:
+            self.agent_types[triangle_id] = 1  # 1=triangle
         # 每個 robot 的移動速度（teleport N 格，預設全部 1）
         self.robot_speeds = config.get('robot_speeds', [1] * self.num_robots)
         # 隨機起始位置：指定哪些 robot 每次 reset 時隨機選位置（set of robot indices）
         self.random_start_robots = config.get('random_start_robots', set())
+        # 固定起始位置（優先於 corner_queue；dict {robot_idx: (y, x)}）
+        self._fixed_start_positions = config.get('robot_start_positions', {})
 
         # 初始化地圖（只有充電座，沒有家具和垃圾）
         self.static_grid = None        # 靜態地圖（充電座）
@@ -166,9 +182,16 @@ class RobotVacuumEnv:
         corner_queue = list(all_corners)
         robot_start_positions = [None] * self.num_robots
 
-        # 先把固定角落分配給非隨機機器人
+        # 先套用手動指定的起始位置（_fixed_start_positions: {robot_idx: (y, x)}）
+        for i, pos in self._fixed_start_positions.items():
+            robot_start_positions[i] = pos
+            occupied.add(pos)
+            if pos in corner_queue:
+                corner_queue.remove(pos)
+
+        # 再把固定角落分配給非隨機機器人（未被手動指定的）
         for i in range(self.num_robots):
-            if i not in self.random_start_robots:
+            if robot_start_positions[i] is None and i not in self.random_start_robots:
                 pos = corner_queue.pop(0)
                 robot_start_positions[i] = pos
                 occupied.add(pos)
@@ -194,7 +217,7 @@ class RobotVacuumEnv:
                 'x': x,
                 'y': y,
                 'energy': self.robot_energies[i],  # 使用個別初始血量
-                'max_energy': global_max_energy,  # 所有人共用最大血量上限
+                'max_energy': self.robot_energies[i],  # 各自的初始血量上限
                 'is_active': True,
                 'is_mover_this_step': False,  # 本回合是否主動移動 (用於 kill 歸屬分析)
                 'charge_count': 0,
@@ -213,6 +236,7 @@ class RobotVacuumEnv:
 
         # 4. 重置回合計數
         self.current_step = 0
+        self.charger_log = []
 
         return self.get_global_state()
 
@@ -508,26 +532,51 @@ class RobotVacuumEnv:
         # exclusive_charging=True 時：場上有任何其他存活 robot 則充電無效
         any_enemy_alive = self.exclusive_charging and sum(r['is_active'] for r in self.robots) > 1
 
+        self.charger_log = []  # Step-level heterotype logging
         for charger_y, charger_x in self.charger_positions:
             robots_in_range = [
                 robot for robot in self.robots
                 if robot['is_active'] and
-                   abs(robot['x'] - charger_x) <= 1 and
-                   abs(robot['y'] - charger_y) <= 1
+                   abs(robot['x'] - charger_x) <= self.charger_range and
+                   abs(robot['y'] - charger_y) <= self.charger_range
             ]
+            occupant_ids = [r['id'] for r in robots_in_range]
+            occupant_types = [self.agent_types[r['id']] for r in robots_in_range]
+            is_mixed = len(set(occupant_types)) >= 2 if occupant_types else False
+            factor_applied = 1.0
             if robots_in_range:
                 if any_enemy_alive:
                     pass  # 場上有敵人，充電無效
                 else:
                     charge_per_robot = self.e_charge / len(robots_in_range)
+                    # Heterotype penalty: mixed types in same charger range
+                    if self.heterotype_charge_mode == 'local-penalty' and is_mixed:
+                        charge_per_robot *= self.heterotype_charge_factor
+                        factor_applied = self.heterotype_charge_factor
                     for robot in robots_in_range:
                         robot['energy'] += charge_per_robot
                         robot['charge_count'] += 1
                         if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
                             robot['non_home_charge_count'] += 1
+            self.charger_log.append({
+                'charger': [charger_y, charger_x],
+                'occupants': occupant_ids,
+                'occupant_types': occupant_types,
+                'occupancy_count': len(occupant_ids),
+                'is_mixed_type': is_mixed,
+                'charge_factor_applied': factor_applied,
+            })
 
-        # 4. 更新所有機器人的關機狀態（允許超充：移除上限 cap）
+        # 4. Energy cap + decay + 死亡判定
         for robot in self.robots:
+            if not robot['is_active']:
+                continue
+            # Energy cap
+            if self.energy_cap is not None:
+                robot['energy'] = min(robot['energy'], self.energy_cap)
+            # Passive decay
+            if self.e_decay > 0:
+                robot['energy'] -= self.e_decay
             robot['energy'] = max(0, robot['energy'])
             if robot['energy'] <= 0:
                 robot['is_active'] = False
@@ -682,28 +731,48 @@ class RobotVacuumEnv:
         # exclusive_charging=True 時：場上有任何其他存活 robot 則充電無效
         any_enemy_alive = self.exclusive_charging and sum(r['is_active'] for r in self.robots) > 1
 
+        self.charger_log = []  # Step-level heterotype logging
         if robot['is_active']:
             for charger_y, charger_x in self.charger_positions:
-                if abs(robot['x'] - charger_x) <= 1 and abs(robot['y'] - charger_y) <= 1:
+                if abs(robot['x'] - charger_x) <= self.charger_range and abs(robot['y'] - charger_y) <= self.charger_range:
                     if any_enemy_alive:
                         pass  # 場上有敵人，充電無效
                     else:
-                        count_in_range = sum(
-                            1 for r in self.robots
+                        robots_in_range = [
+                            r for r in self.robots
                             if r['is_active'] and
-                               abs(r['x'] - charger_x) <= 1 and
-                               abs(r['y'] - charger_y) <= 1
-                        )
-                        charge_amount = self.e_charge / count_in_range
+                               abs(r['x'] - charger_x) <= self.charger_range and
+                               abs(r['y'] - charger_y) <= self.charger_range
+                        ]
+                        occupant_ids = [r['id'] for r in robots_in_range]
+                        occupant_types = [self.agent_types[r['id']] for r in robots_in_range]
+                        is_mixed = len(set(occupant_types)) >= 2
+                        factor_applied = 1.0
+                        charge_amount = self.e_charge / len(robots_in_range)
+                        # Heterotype penalty
+                        if self.heterotype_charge_mode == 'local-penalty' and is_mixed:
+                            charge_amount *= self.heterotype_charge_factor
+                            factor_applied = self.heterotype_charge_factor
                         robot['energy'] += charge_amount
                         robot['charge_count'] += 1
                         if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
                             robot['non_home_charge_count'] += 1
+                        self.charger_log.append({
+                            'charger': [charger_y, charger_x],
+                            'occupants': occupant_ids,
+                            'occupant_types': occupant_types,
+                            'occupancy_count': len(occupant_ids),
+                            'is_mixed_type': is_mixed,
+                            'charge_factor_applied': factor_applied,
+                        })
 
-        # 6. 更新能量下限並檢查死亡（允許超充：移除上限 cap）
-        robot['energy'] = max(0, robot['energy'])
-        if robot['energy'] <= 0:
-            robot['is_active'] = False
+        # 6. Energy cap + 死亡判定
+        if robot['is_active']:
+            if self.energy_cap is not None:
+                robot['energy'] = min(robot['energy'], self.energy_cap)
+            robot['energy'] = max(0, robot['energy'])
+            if robot['energy'] <= 0:
+                robot['is_active'] = False
 
         # 6b. 收集灰塵（確認活著才領）
         if self.dust_enabled and robot['is_active']:
@@ -729,6 +798,15 @@ class RobotVacuumEnv:
         Returns:
             done: 是否達到最大步數
         """
+        # Passive decay (applied once per full timestep)
+        if self.e_decay > 0:
+            for robot in self.robots:
+                if robot['is_active']:
+                    robot['energy'] -= self.e_decay
+                    robot['energy'] = max(0, robot['energy'])
+                    if robot['energy'] <= 0:
+                        robot['is_active'] = False
+
         self.current_step += 1
         if self.dust_enabled:
             self._update_dust()
@@ -766,6 +844,8 @@ class RobotVacuumEnv:
         }
         if self.dust_enabled:
             state['dust_grid'] = self.dust_grid.copy()
+        if hasattr(self, 'charger_log'):
+            state['charger_log'] = self.charger_log
         return state
 
     def render(self):
