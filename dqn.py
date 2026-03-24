@@ -86,9 +86,8 @@ class DQN(nn.Module):
     Deep Q-Network with MLP architecture
 
     Network structure:
-    - Input layer: obs_dim = 3 + (N-1)*3 + C*2 + n²
-                   e.g. 2 robots + 1 charger, 5×5 → 3+3+2+25 = 33
-    - Hidden layers: 128 -> 256 -> 256 -> 128
+    - Input layer: obs_dim
+    - Hidden layers: 128 -> 128
     - Output layer: num_actions (5: up/down/left/right/stay)
     """
     def __init__(self, num_actions, input_dim):
@@ -97,11 +96,7 @@ class DQN(nn.Module):
         self.network = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.ReLU(),
-            nn.Linear(128, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 128),
+            nn.Linear(128, 128),
             nn.ReLU(),
             nn.Linear(128, num_actions)
         )
@@ -125,20 +120,18 @@ class DuelingDQN(nn.Module):
         self.feature = nn.Sequential(
             _make_linear(input_dim, 128, noisy),
             nn.ReLU(),
-            _make_linear(128, 256, noisy),
-            nn.ReLU(),
-            _make_linear(256, 256, noisy),
+            _make_linear(128, 128, noisy),
             nn.ReLU(),
         )
         self.value_stream = nn.Sequential(
-            _make_linear(256, 128, noisy),
+            _make_linear(128, 64, noisy),
             nn.ReLU(),
-            _make_linear(128, 1, noisy),
+            _make_linear(64, 1, noisy),
         )
         self.advantage_stream = nn.Sequential(
-            _make_linear(256, 128, noisy),
+            _make_linear(128, 64, noisy),
             nn.ReLU(),
-            _make_linear(128, num_actions, noisy),
+            _make_linear(64, num_actions, noisy),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -180,28 +173,26 @@ class C51DQN(nn.Module):
         self.feature = nn.Sequential(
             _make_linear(input_dim, 128, noisy),
             nn.ReLU(),
-            _make_linear(128, 256, noisy),
-            nn.ReLU(),
-            _make_linear(256, 256, noisy),
+            _make_linear(128, 128, noisy),
             nn.ReLU(),
         )
 
         if dueling:
             self.value_stream = nn.Sequential(
-                _make_linear(256, 128, noisy),
+                _make_linear(128, 64, noisy),
                 nn.ReLU(),
-                _make_linear(128, num_atoms, noisy),
+                _make_linear(64, num_atoms, noisy),
             )
             self.advantage_stream = nn.Sequential(
-                _make_linear(256, 128, noisy),
+                _make_linear(128, 64, noisy),
                 nn.ReLU(),
-                _make_linear(128, num_actions * num_atoms, noisy),
+                _make_linear(64, num_actions * num_atoms, noisy),
             )
         else:
             self.head = nn.Sequential(
-                _make_linear(256, 128, noisy),
+                _make_linear(128, 64, noisy),
                 nn.ReLU(),
-                _make_linear(128, num_actions * num_atoms, noisy),
+                _make_linear(64, num_actions * num_atoms, noisy),
             )
 
     def dist(self, x: torch.Tensor) -> torch.Tensor:

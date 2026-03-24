@@ -97,7 +97,7 @@ train_dqn_vec.py  (VectorizedMultiAgentTrainer + SharedBufferDQNAgent)
 
 **`vec_env.py`** — Wraps N `RobotVacuumGymEnv` instances, batches observations for GPU inference, handles auto-reset on episode end.
 
-**`dqn.py`** — MLP: `obs_dim → 128 → 256 → 256 → 128 → 5 actions`. Kaiming init.
+**`dqn.py`** — MLP: `obs_dim → 256 → 512 → 512 → 256 → 5 actions`. Kaiming init. Supports Dueling, NoisyNet, C51.
 
 **`train_dqn_vec.py`** — `VectorizedMultiAgentTrainer` manages:
 - One `SharedBufferDQNAgent` per robot (q_net + target_net + Adam)

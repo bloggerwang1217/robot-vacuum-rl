@@ -98,6 +98,14 @@ class RobotVacuumEnv:
         self.energy_cap = config.get('energy_cap', None)
         # Energy decay: per-step passive energy drain for all alive robots
         self.e_decay = config.get('e_decay', 0.0)
+        # Per-robot attack power (damage dealt when this robot collides)
+        attack_powers = config.get('robot_attack_powers', None)
+        if attack_powers is not None:
+            self.robot_attack_powers = list(attack_powers)
+        else:
+            self.robot_attack_powers = [self.e_collision] * self.num_robots
+        # Thief spawn mode
+        self.thief_spawn = config.get('thief_spawn', False)
         # Agent types (needed for heterotype check)
         triangle_id = config.get('triangle_agent_id', None)
         self.agent_types = [0] * self.num_robots  # 0=circle
@@ -172,38 +180,54 @@ class RobotVacuumEnv:
                 self.is_charger_grid[y, x] = True
 
         # 3. 初始化機器人位置
-        all_corners = [
-            (0, 0),
-            (0, self.n - 1),
-            (self.n - 1, 0),
-            (self.n - 1, self.n - 1)
-        ]
-        occupied = set()
-        corner_queue = list(all_corners)
-        robot_start_positions = [None] * self.num_robots
+        if self.thief_spawn:
+            # Thief scenario: weak (robot 1) near charger, strong (robot 0) far
+            cy, cx = self.charger_positions[0]
+            adjacent = [(cy-1, cx), (cy+1, cx), (cy, cx-1), (cy, cx+1)]
+            adjacent = [(y, x) for y, x in adjacent if 0 <= y < self.n and 0 <= x < self.n]
+            wy, wx = random.choice(adjacent)
+            forbidden = set(adjacent + [(cy, cx)])
+            all_cells = [(y, x) for y in range(self.n) for x in range(self.n)]
+            candidates = [p for p in all_cells if p not in forbidden and p != (wy, wx)]
+            sy, sx = random.choice(candidates)
+            robot_start_positions = [(sy, sx), (wy, wx)]  # robot_0=strong far, robot_1=weak near
+            # Pad if more than 2 robots
+            for i in range(2, self.num_robots):
+                remaining = [p for p in all_cells if p not in set(robot_start_positions)]
+                robot_start_positions.append(random.choice(remaining))
+        else:
+            all_corners = [
+                (0, 0),
+                (0, self.n - 1),
+                (self.n - 1, 0),
+                (self.n - 1, self.n - 1)
+            ]
+            occupied = set()
+            corner_queue = list(all_corners)
+            robot_start_positions = [None] * self.num_robots
 
-        # 先套用手動指定的起始位置（_fixed_start_positions: {robot_idx: (y, x)}）
-        for i, pos in self._fixed_start_positions.items():
-            robot_start_positions[i] = pos
-            occupied.add(pos)
-            if pos in corner_queue:
-                corner_queue.remove(pos)
-
-        # 再把固定角落分配給非隨機機器人（未被手動指定的）
-        for i in range(self.num_robots):
-            if robot_start_positions[i] is None and i not in self.random_start_robots:
-                pos = corner_queue.pop(0)
+            # 先套用手動指定的起始位置（_fixed_start_positions: {robot_idx: (y, x)}）
+            for i, pos in self._fixed_start_positions.items():
                 robot_start_positions[i] = pos
                 occupied.add(pos)
+                if pos in corner_queue:
+                    corner_queue.remove(pos)
 
-        # 再把隨機位置分配給隨機機器人
-        all_cells = [(y, x) for y in range(self.n) for x in range(self.n)]
-        for i in range(self.num_robots):
-            if i in self.random_start_robots:
-                candidates = [p for p in all_cells if p not in occupied]
-                pos = random.choice(candidates)
-                robot_start_positions[i] = pos
-                occupied.add(pos)
+            # 再把固定角落分配給非隨機機器人（未被手動指定的）
+            for i in range(self.num_robots):
+                if robot_start_positions[i] is None and i not in self.random_start_robots:
+                    pos = corner_queue.pop(0)
+                    robot_start_positions[i] = pos
+                    occupied.add(pos)
+
+            # 再把隨機位置分配給隨機機器人
+            all_cells = [(y, x) for y in range(self.n) for x in range(self.n)]
+            for i in range(self.num_robots):
+                if i in self.random_start_robots:
+                    candidates = [p for p in all_cells if p not in occupied]
+                    pos = random.choice(candidates)
+                    robot_start_positions[i] = pos
+                    occupied.add(pos)
 
         # 計算全域最大血量（所有 robot 共用，弱者可以充電到這個上限）
         global_max_energy = max(self.robot_energies)
@@ -470,8 +494,10 @@ class RobotVacuumEnv:
                         robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
 
                 elif reason in ["swap", "contested"]:
-                    # 互撞：雙方停留，都受傷
-                    robot['energy'] -= self.e_collision
+                    # 互撞：雙方停留，受對方 attack power 傷害
+                    opponent_id = robot['collided_with_agent_id']
+                    dmg = self.robot_attack_powers[opponent_id] if opponent_id is not None else self.e_collision
+                    robot['energy'] -= dmg
                     robot['active_collision_count'] += 1
                     if robot['collided_with_agent_id'] is not None:
                         robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
@@ -501,21 +527,23 @@ class RobotVacuumEnv:
 
             # 檢查是否被推開
             if robot_id in knockback_targets:
-                # 被推開：移動到新位置，受傷害
+                # 被推開：移動到新位置，受傷害（傷害 = 攻擊者的 attack power）
                 new_pos = knockback_targets[robot_id]
                 robot['y'], robot['x'] = new_pos
-                robot['energy'] -= self.e_collision
-                robot['passive_collision_count'] += 1
                 aggressor_id = robot['collided_with_agent_id']
+                dmg = self.robot_attack_powers[aggressor_id] if aggressor_id is not None else self.e_collision
+                robot['energy'] -= dmg
+                robot['passive_collision_count'] += 1
                 if aggressor_id is not None:
                     robot['collided_by_counts'][aggressor_id] += 1
             else:
                 # 沒有被推開：停留原位
                 # 如果被撞且沒有被推開（即 stationary_blocked 情況）
                 if robot['collided_with_agent_id'] is not None:
-                    robot['energy'] -= self.e_collision
-                    robot['passive_collision_count'] += 1
                     aggressor_id = robot['collided_with_agent_id']
+                    dmg = self.robot_attack_powers[aggressor_id] if aggressor_id is not None else self.e_collision
+                    robot['energy'] -= dmg
+                    robot['passive_collision_count'] += 1
                     robot['collided_by_counts'][aggressor_id] += 1
 
         # 3e. 收集灰塵：所有活躍機器人在最終位置收走灰塵並清零
@@ -528,10 +556,8 @@ class RobotVacuumEnv:
                     robot['total_dust_collected'] += dust
                     self.dust_grid[y, x] = 0.0
 
-        # 3c. 無線充電：以每個充電座為中心的 3x3 範圍內平分電量
-        # exclusive_charging=True 時：場上有任何其他存活 robot 則充電無效
-        any_enemy_alive = self.exclusive_charging and sum(r['is_active'] for r in self.robots) > 1
-
+        # 3c. 充電：以每個充電座為中心的範圍內平分電量
+        # exclusive_charging=True 時：只有該充電座範圍內唯一的 robot 才能充電
         self.charger_log = []  # Step-level heterotype logging
         for charger_y, charger_x in self.charger_positions:
             robots_in_range = [
@@ -545,8 +571,8 @@ class RobotVacuumEnv:
             is_mixed = len(set(occupant_types)) >= 2 if occupant_types else False
             factor_applied = 1.0
             if robots_in_range:
-                if any_enemy_alive:
-                    pass  # 場上有敵人，充電無效
+                if self.exclusive_charging and len(robots_in_range) > 1:
+                    factor_applied = 0.0  # blocked
                 else:
                     charge_per_robot = self.e_charge / len(robots_in_range)
                     # Heterotype penalty: mixed types in same charger range
@@ -571,9 +597,11 @@ class RobotVacuumEnv:
         for robot in self.robots:
             if not robot['is_active']:
                 continue
-            # Energy cap
+            # Energy cap (global or per-robot init energy)
             if self.energy_cap is not None:
                 robot['energy'] = min(robot['energy'], self.energy_cap)
+            else:
+                robot['energy'] = min(robot['energy'], robot['max_energy'])
             # Passive decay
             if self.e_decay > 0:
                 robot['energy'] -= self.e_decay
@@ -607,6 +635,13 @@ class RobotVacuumEnv:
         robot['collided_with_agent_id'] = None
         robot['is_mover_this_step'] = False
         robot['dust_collected_this_step'] = 0.0
+
+        # 1b. Passive energy decay (per-robot, matching batch_env timing)
+        if self.e_decay > 0 and robot['is_active']:
+            robot['energy'] -= self.e_decay
+            robot['energy'] = max(0, robot['energy'])
+            if robot['energy'] <= 0:
+                robot['is_active'] = False
 
         # 如果機器人已死亡，直接返回
         if not robot['is_active']:
@@ -680,7 +715,7 @@ class RobotVacuumEnv:
                         collision_type = "knockback_success"
                         robot['y'], robot['x'] = py, px
                         victim['y'], victim['x'] = new_victim_y, new_victim_x
-                        victim['energy'] -= self.e_collision
+                        victim['energy'] -= self.robot_attack_powers[robot_id]
                         victim['passive_collision_count'] += 1
                         victim['collided_by_counts'][robot_id] += 1
                         victim['collided_with_agent_id'] = robot_id
@@ -703,7 +738,7 @@ class RobotVacuumEnv:
                     else:
                         # stationary_blocked：無路可推，移動者停住
                         collision_type = "stationary_blocked"
-                        victim['energy'] -= self.e_collision
+                        victim['energy'] -= self.robot_attack_powers[robot_id]
                         victim['passive_collision_count'] += 1
                         victim['collided_by_counts'][robot_id] += 1
                         victim['collided_with_agent_id'] = robot_id
@@ -727,23 +762,30 @@ class RobotVacuumEnv:
                     # 沒有碰撞，正常移動
                     robot['y'], robot['x'] = py, px
 
-        # 4. 無線充電：在充電座 3x3 範圍內就充電（平分給所有範圍內的活躍機器人）
-        # exclusive_charging=True 時：場上有任何其他存活 robot 則充電無效
-        any_enemy_alive = self.exclusive_charging and sum(r['is_active'] for r in self.robots) > 1
-
+        # 4. 充電：在充電座範圍內就充電（平分給所有範圍內的活躍機器人）
+        # exclusive_charging=True 時：只有該充電座範圍內唯一的 robot 才能充電
         self.charger_log = []  # Step-level heterotype logging
         if robot['is_active']:
             for charger_y, charger_x in self.charger_positions:
                 if abs(robot['x'] - charger_x) <= self.charger_range and abs(robot['y'] - charger_y) <= self.charger_range:
-                    if any_enemy_alive:
-                        pass  # 場上有敵人，充電無效
+                    robots_in_range = [
+                        r for r in self.robots
+                        if r['is_active'] and
+                           abs(r['x'] - charger_x) <= self.charger_range and
+                           abs(r['y'] - charger_y) <= self.charger_range
+                    ]
+                    if self.exclusive_charging and len(robots_in_range) > 1:
+                        # Multiple robots in range, nobody charges
+                        occupant_ids = [r['id'] for r in robots_in_range]
+                        self.charger_log.append({
+                            'charger': [charger_y, charger_x],
+                            'occupants': occupant_ids,
+                            'occupant_types': [self.agent_types[r['id']] for r in robots_in_range],
+                            'occupancy_count': len(occupant_ids),
+                            'is_mixed_type': False,
+                            'charge_factor_applied': 0.0,
+                        })
                     else:
-                        robots_in_range = [
-                            r for r in self.robots
-                            if r['is_active'] and
-                               abs(r['x'] - charger_x) <= self.charger_range and
-                               abs(r['y'] - charger_y) <= self.charger_range
-                        ]
                         occupant_ids = [r['id'] for r in robots_in_range]
                         occupant_types = [self.agent_types[r['id']] for r in robots_in_range]
                         is_mixed = len(set(occupant_types)) >= 2
@@ -770,6 +812,8 @@ class RobotVacuumEnv:
         if robot['is_active']:
             if self.energy_cap is not None:
                 robot['energy'] = min(robot['energy'], self.energy_cap)
+            else:
+                robot['energy'] = min(robot['energy'], robot['max_energy'])
             robot['energy'] = max(0, robot['energy'])
             if robot['energy'] <= 0:
                 robot['is_active'] = False
@@ -798,14 +842,8 @@ class RobotVacuumEnv:
         Returns:
             done: 是否達到最大步數
         """
-        # Passive decay (applied once per full timestep)
-        if self.e_decay > 0:
-            for robot in self.robots:
-                if robot['is_active']:
-                    robot['energy'] -= self.e_decay
-                    robot['energy'] = max(0, robot['energy'])
-                    if robot['energy'] <= 0:
-                        robot['is_active'] = False
+        # Note: passive energy decay is now applied per-robot inside step_single()
+        # to match batch_env timing (decay before action, so other robots see post-decay energy).
 
         self.current_step += 1
         if self.dust_enabled:

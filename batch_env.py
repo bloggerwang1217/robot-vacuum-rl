@@ -53,8 +53,17 @@ class BatchRobotVacuumEnv:
         if self.energy_cap is not None:
             self.energy_cap = float(self.energy_cap)
         self.e_decay = float(env_kwargs.get('e_decay', 0.0))
+        self.reward_mode = env_kwargs.get('reward_mode', 'delta-energy')
+        self.reward_alpha = float(env_kwargs.get('reward_alpha', 0.05))
         speeds = env_kwargs.get('robot_speeds', None) or [1] * R
         self.robot_speeds = list(speeds)
+
+        # ── Per-robot attack power (damage dealt when this robot collides) ─
+        attack_powers = env_kwargs.get('robot_attack_powers', None)
+        if attack_powers is not None:
+            self.attack_powers = np.array(attack_powers, dtype=np.float32)  # (R,)
+        else:
+            self.attack_powers = np.full(R, self.e_collision, dtype=np.float32)  # (R,)
 
         # ── Initial energies ───────────────────────────────────────────────
         init_e = env_kwargs.get('initial_energy', 100)
@@ -101,8 +110,10 @@ class BatchRobotVacuumEnv:
             self.agent_types[triangle_id] = 1.0
 
         # ── Observation dim ────────────────────────────────────────────────
-        # +1 self_type, +1 per other robot's type (always present, padded 0 when mode=off)
-        obs_dim = 3 + 1 + 4 + (R - 1) * 4 + 2 * self.C
+        if self.agent_types_mode == 'observe':
+            obs_dim = 3 + 1 + 4 + (R - 1) * 4 + 2 * self.C  # +1 self_type, +1 per other
+        else:
+            obs_dim = 3 + 4 + (R - 1) * 3 + 2 * self.C  # no type dims
         if self.dust_enabled:
             obs_dim += n * n
         self.obs_dim = obs_dim
@@ -129,6 +140,9 @@ class BatchRobotVacuumEnv:
         for i in range(R):
             if i not in self._fixed_starts and i not in self.random_start_robots:
                 self._fixed_starts[i] = corner_q.pop(0)
+
+        # ── Thief spawn config ────────────────────────────────────────────
+        self.thief_spawn = bool(env_kwargs.get('thief_spawn', False))
 
         # ── State arrays (allocated once) ──────────────────────────────────
         self.pos    = np.zeros((N, R, 2), dtype=np.int32)    # [y, x]
@@ -163,13 +177,14 @@ class BatchRobotVacuumEnv:
         """Returns (N, obs_dim)."""
         return self._build_obs(robot_id)
 
-    def step_single(self, robot_id: int, actions: np.ndarray):
+    def step_single(self, robot_id: int, actions: np.ndarray, is_last_turn: bool = True):
         """
         Execute robot_id's action across all N envs simultaneously.
 
         Args:
             robot_id: which robot acts
             actions:  (N,) int32 — 0=UP,1=DOWN,2=LEFT,3=RIGHT,4=STAY
+            is_last_turn: if False, skip decay and charging (for speed>1 sub-steps)
 
         Returns:
             next_obs:   (N, obs_dim)
@@ -188,6 +203,15 @@ class BatchRobotVacuumEnv:
         # are correctly captured when robot_1's own step runs next.
         self.active_collisions_with[:, rid, :] = 0
         self.dust_collected[:, rid]   = 0.0
+
+        # ── Passive energy decay (only on last turn — not multiplied by speed) ──
+        if self.e_decay > 0 and is_last_turn:
+            alive_mask = self.alive[:, rid]
+            self.energy[:, rid] -= alive_mask.astype(np.float32) * self.e_decay
+            self.energy[:, rid] = np.maximum(self.energy[:, rid], 0.0)
+            just_died = alive_mask & (self.energy[:, rid] <= 0)
+            self.alive[just_died, rid] = False
+            self.died_this_step[:, rid] |= just_died
 
         is_alive = self.alive[:, rid]               # (N,)
         is_move  = is_alive & (actions != _STAY)    # (N,)
@@ -247,11 +271,11 @@ class BatchRobotVacuumEnv:
             self.pos[can_push, rid, 1] = px[can_push]
             self.pos[can_push, j,   0] = kby[can_push]
             self.pos[can_push, j,   1] = kbx[can_push]
-            self.energy[can_push, j]  -= self.e_collision
+            self.energy[can_push, j]  -= self.attack_powers[rid]
             self.active_collisions_with[can_push, rid, j] += 1
 
             # stationary_blocked: attacker stays, victim takes damage
-            self.energy[stationary, j] -= self.e_collision
+            self.energy[stationary, j] -= self.attack_powers[rid]
             self.active_collisions_with[stationary, rid, j] += 1
 
         # ── Normal move (no collision) ─────────────────────────────────────
@@ -270,48 +294,51 @@ class BatchRobotVacuumEnv:
             # stays True until robot_j's own next step applies the penalty.
             self.died_this_step[:, r] |= just_died
 
-        # ── Charging ──────────────────────────────────────────────────────
-        ry = self.pos[:, rid, 0]    # (N,) current y
-        rx = self.pos[:, rid, 1]    # (N,) current x
+        # ── Charging (only on last turn — not multiplied by speed) ────────
+        if is_last_turn:
+            ry = self.pos[:, rid, 0]    # (N,) current y
+            rx = self.pos[:, rid, 1]    # (N,) current x
 
-        cr = self.charger_range
-        for cy, cx in self.charger_positions:
-            in_range = (self.alive[:, rid]
-                        & (np.abs(ry - cy) <= cr)
-                        & (np.abs(rx - cx) <= cr))   # (N,)
-            if not np.any(in_range):
-                continue
+            cr = self.charger_range
+            for cy, cx in self.charger_positions:
+                in_range = (self.alive[:, rid]
+                            & (np.abs(ry - cy) <= cr)
+                            & (np.abs(rx - cx) <= cr))   # (N,)
+                if not np.any(in_range):
+                    continue
 
-            if self.exclusive_charging:
-                # Charge only when THIS robot is the last survivor
-                n_alive = self.alive.sum(axis=1)    # (N,)
-                can_charge = in_range & (n_alive <= 1)
-                self.energy[can_charge, rid] += self.e_charge
-            else:
-                # Charge divided among all robots in charger range
-                count = np.zeros(N, dtype=np.float32)
-                for k in range(R):
-                    count += (self.alive[:, k]
-                              & (np.abs(self.pos[:, k, 0] - cy) <= cr)
-                              & (np.abs(self.pos[:, k, 1] - cx) <= cr)).astype(np.float32)
-                charge_amt = self.e_charge / np.maximum(count, 1.0)   # (N,)
-                # Heterotype penalty: mixed types in same charger range
-                if self.heterotype_charge_mode == 'local-penalty':
-                    # Check per-env if charger occupants are mixed type
-                    # has_circle[e] = any circle alive in range, has_triangle[e] = any triangle in range
-                    has_circle = np.zeros(N, dtype=bool)
-                    has_triangle = np.zeros(N, dtype=bool)
+                if self.exclusive_charging:
+                    # Charge only when sole occupant in this charger's range
+                    n_in_range = np.zeros(N, dtype=np.int32)
                     for k in range(R):
-                        k_in_range = (self.alive[:, k]
-                                      & (np.abs(self.pos[:, k, 0] - cy) <= cr)
-                                      & (np.abs(self.pos[:, k, 1] - cx) <= cr))
-                        if self.agent_types[k] == 0:
-                            has_circle |= k_in_range
-                        else:
-                            has_triangle |= k_in_range
-                    is_mixed = has_circle & has_triangle  # (N,)
-                    charge_amt = np.where(is_mixed, charge_amt * self.heterotype_charge_factor, charge_amt)
-                self.energy[in_range, rid] += charge_amt[in_range]
+                        n_in_range += (self.alive[:, k]
+                                       & (np.abs(self.pos[:, k, 0] - cy) <= cr)
+                                       & (np.abs(self.pos[:, k, 1] - cx) <= cr)).astype(np.int32)
+                    can_charge = in_range & (n_in_range <= 1)
+                    self.energy[can_charge, rid] += self.e_charge
+                else:
+                    # Charge divided among all robots in charger range
+                    count = np.zeros(N, dtype=np.float32)
+                    for k in range(R):
+                        count += (self.alive[:, k]
+                                  & (np.abs(self.pos[:, k, 0] - cy) <= cr)
+                                  & (np.abs(self.pos[:, k, 1] - cx) <= cr)).astype(np.float32)
+                    charge_amt = self.e_charge / np.maximum(count, 1.0)   # (N,)
+                    # Heterotype penalty: mixed types in same charger range
+                    if self.heterotype_charge_mode == 'local-penalty':
+                        has_circle = np.zeros(N, dtype=bool)
+                        has_triangle = np.zeros(N, dtype=bool)
+                        for k in range(R):
+                            k_in_range = (self.alive[:, k]
+                                          & (np.abs(self.pos[:, k, 0] - cy) <= cr)
+                                          & (np.abs(self.pos[:, k, 1] - cx) <= cr))
+                            if self.agent_types[k] == 0:
+                                has_circle |= k_in_range
+                            else:
+                                has_triangle |= k_in_range
+                        is_mixed = has_circle & has_triangle  # (N,)
+                        charge_amt = np.where(is_mixed, charge_amt * self.heterotype_charge_factor, charge_amt)
+                    self.energy[in_range, rid] += charge_amt[in_range]
 
         # ── Dust harvest ──────────────────────────────────────────────────
         if self.dust_enabled:
@@ -324,24 +351,34 @@ class BatchRobotVacuumEnv:
                 self.dust_collected[env_idx_live, rid] = harvested
                 self.dust[env_idx_live, ys, xs] = 0.0
 
-        # ── Energy cap (after charging) ──────────────────────────────────
+        # ── Rewards (computed BEFORE energy cap, so charging at full energy
+        #    still produces a positive delta-energy reward) ────────────────
+        if self.reward_mode == 'hp-ratio':
+            # HP-ratio reward: (current_energy / energy_cap) * alpha per step
+            cap = self.energy_cap if self.energy_cap is not None else 100.0
+            rewards = (self.energy[:, rid] / cap).astype(np.float32) * self.reward_alpha
+            rewards -= self.died_this_step[:, rid].astype(np.float32) * 100.0
+        else:
+            # Delta-energy reward: immediate signal for energy changes
+            energy_delta = self.energy[:, rid] - self.prev_energy[:, rid]
+            rewards = energy_delta.astype(np.float32) * self.reward_alpha
+            rewards -= self.died_this_step[:, rid].astype(np.float32) * 100.0
+
+        # ── Energy cap (AFTER reward computation) ────────────────────────
+        # Per-robot cap: use global energy_cap if set, otherwise cap at each
+        # robot's initial energy to prevent unbounded overcharging.
         if self.energy_cap is not None:
             self.energy[:, rid] = np.minimum(self.energy[:, rid], self.energy_cap)
-
-        # ── Rewards ───────────────────────────────────────────────────────
-        # 血量比例獎勵：活著且血量越高，每步 reward 越多
-        max_e = self.init_energies[rid]
-        hp_ratio = np.where(self.alive[:, rid], self.energy[:, rid] / max_e, 0.0)
-        rewards = hp_ratio.astype(np.float32) * 0.1
-        rewards -= self.died_this_step[:, rid].astype(np.float32) * 100.0
+        else:
+            self.energy[:, rid] = np.minimum(self.energy[:, rid], self.init_energies[rid])
 
         # ── Outputs ───────────────────────────────────────────────────────
         terminated = ~self.alive[:, rid]                # (N,) bool
         truncated  = np.zeros(N, dtype=bool)
         next_obs   = self._build_obs(rid)               # (N, obs_dim)
-        infos      = self._build_infos(rid)             # list[N]
+        infos      = None  # Skipped: training loop reads collisions directly from numpy arrays
 
-        # ── Save state for next cycle (AFTER reward computation) ──────────
+        # ── Save state for next cycle (AFTER reward computation & cap) ───
         # prev_energy is saved HERE (end of step) so that if this robot is
         # killed by another robot before its next turn, the correct
         # pre-death energy is used for the delta calculation.
@@ -360,12 +397,8 @@ class BatchRobotVacuumEnv:
         """
         self.steps += 1
 
-        # Passive energy decay (all alive robots)
-        if self.e_decay > 0:
-            self.energy -= self.e_decay * self.alive.astype(np.float32)
-            self.energy = np.maximum(self.energy, 0.0)
-            just_died = self.alive & (self.energy <= 0)
-            self.alive[just_died] = False
+        # Note: passive energy decay is now applied per-robot inside step_single()
+        # so decay deaths are properly captured in rewards.
 
         if self.dust_enabled:
             self._update_dust()
@@ -407,12 +440,10 @@ class BatchRobotVacuumEnv:
         obs[:, col] = self.energy[:, rid] * inv_max
         col += 1
 
-        # 3. Self type (0 padding when mode=off, actual type when mode=observe)
+        # 3. Self type (only when mode=observe)
         if self.agent_types_mode == 'observe':
             obs[:, col] = self.agent_types[rid]
-        else:
-            obs[:, col] = 0.0
-        col += 1
+            col += 1
 
         # 4. Wall indicators
         obs[:, col  ] = (self.pos[:, rid, 0] == 0    ).astype(np.float32)  # wall_up
@@ -421,18 +452,17 @@ class BatchRobotVacuumEnv:
         obs[:, col+3] = (self.pos[:, rid, 1] == n - 1).astype(np.float32)  # wall_right
         col += 4
 
-        # 5. Other robots (dx, dy, energy, type)
+        # 5. Other robots (dx, dy, energy[, type])
         for j in range(R):
             if j == rid:
                 continue
             obs[:, col  ] = (self.pos[:, j, 1] - self.pos[:, rid, 1]).astype(np.float32) * inv
             obs[:, col+1] = (self.pos[:, j, 0] - self.pos[:, rid, 0]).astype(np.float32) * inv
             obs[:, col+2] = self.energy[:, j] * inv_max
+            col += 3
             if self.agent_types_mode == 'observe':
-                obs[:, col+3] = self.agent_types[j]
-            else:
-                obs[:, col+3] = 0.0
-            col += 4
+                obs[:, col] = self.agent_types[j]
+                col += 1
 
         # 6. Charger offsets (dx, dy)
         for cy, cx in self.charger_positions:
@@ -446,7 +476,7 @@ class BatchRobotVacuumEnv:
             obs[:, col:col + n * n] = dust_norm.reshape(N, n * n)
             col += n * n
 
-        return obs.copy()
+        return obs.copy()  # Must copy: buffer is shared across calls, callers hold references across _build_obs invocations
 
     def _build_infos(self, robot_id: int) -> List[Dict]:
         """Build list of N info dicts. Only includes fields used by training loop."""
@@ -462,20 +492,37 @@ class BatchRobotVacuumEnv:
     def _reset_single(self, env_idx: int):
         """Reset one env in-place."""
         n = self.n
-        for i, (y, x) in self._fixed_starts.items():
-            self.pos[env_idx, i, 0] = y
-            self.pos[env_idx, i, 1] = x
-
-        if self.random_start_robots:
-            all_cells = [(r, c) for r in range(n) for c in range(n)]
-            occupied  = {(self.pos[env_idx, i, 0], self.pos[env_idx, i, 1])
-                         for i in range(self.R) if i not in self.random_start_robots}
-            for i in self.random_start_robots:
-                candidates = [p for p in all_cells if p not in occupied]
-                y, x = random.choice(candidates)
+        if self.thief_spawn:
+            # Thief scenario: weak (robot 1) near charger, strong (robot 0) far
+            cy, cx = self.charger_positions[0]
+            # Weak (robot 1): random adjacent to charger (4-connected)
+            adjacent = [(cy-1, cx), (cy+1, cx), (cy, cx-1), (cy, cx+1)]
+            adjacent = [(y, x) for y, x in adjacent if 0 <= y < n and 0 <= x < n]
+            wy, wx = random.choice(adjacent)
+            self.pos[env_idx, 1, 0] = wy
+            self.pos[env_idx, 1, 1] = wx
+            # Strong (robot 0): random, not on/adjacent to charger
+            forbidden = set(adjacent + [(cy, cx)])
+            candidates = [(r, c) for r in range(n) for c in range(n)
+                           if (r, c) not in forbidden and (r, c) != (wy, wx)]
+            sy, sx = random.choice(candidates)
+            self.pos[env_idx, 0, 0] = sy
+            self.pos[env_idx, 0, 1] = sx
+        else:
+            for i, (y, x) in self._fixed_starts.items():
                 self.pos[env_idx, i, 0] = y
                 self.pos[env_idx, i, 1] = x
-                occupied.add((y, x))
+
+            if self.random_start_robots:
+                all_cells = [(r, c) for r in range(n) for c in range(n)]
+                occupied  = {(self.pos[env_idx, i, 0], self.pos[env_idx, i, 1])
+                             for i in range(self.R) if i not in self.random_start_robots}
+                for i in self.random_start_robots:
+                    candidates = [p for p in all_cells if p not in occupied]
+                    y, x = random.choice(candidates)
+                    self.pos[env_idx, i, 0] = y
+                    self.pos[env_idx, i, 1] = x
+                    occupied.add((y, x))
 
         self.energy[env_idx]      = self.init_energies
         self.alive[env_idx]       = True

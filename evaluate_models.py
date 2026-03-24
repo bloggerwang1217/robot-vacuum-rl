@@ -121,6 +121,13 @@ class ModelEvaluator:
             heterotype_charge_factor=getattr(args, 'heterotype_charge_factor', 1.0),
             energy_cap=getattr(args, 'energy_cap', None),
             e_decay=getattr(args, 'e_decay', 0.0),
+            robot_attack_powers=[
+                p if p is not None else None
+                for p in [args.robot_0_attack_power, args.robot_1_attack_power,
+                          args.robot_2_attack_power, args.robot_3_attack_power][:self.num_robots]
+            ] if any(p is not None for p in [args.robot_0_attack_power, args.robot_1_attack_power,
+                                              args.robot_2_attack_power, args.robot_3_attack_power][:self.num_robots]) else None,
+            thief_spawn=getattr(args, 'thief_spawn', False),
         )
 
         # Initialize agents (only for the robots that exist)
@@ -173,7 +180,26 @@ class ModelEvaluator:
                 )
                 agent.load = lambda fp, _net=q_net, _dev=self.device: _net.load_state_dict(
                     torch.load(fp, map_location=_dev, weights_only=True))
-                agent.select_action = None  # will use q_net directly
+                def _make_select_action(_net, _dev, _eps):
+                    def _select_action(obs, eval_mode=False, return_q_values=False):
+                        if isinstance(obs, np.ndarray):
+                            obs = torch.from_numpy(obs).float()
+                        if obs.dim() == 1:
+                            obs = obs.unsqueeze(0)
+                        obs = obs.to(_dev)
+                        with torch.no_grad():
+                            if hasattr(_net, 'reset_noise'):
+                                _net.reset_noise()
+                            q_values = _net(obs).squeeze(0).cpu().numpy()
+                        if not eval_mode and np.random.random() < _eps:
+                            action = np.random.randint(0, len(q_values))
+                        else:
+                            action = int(np.argmax(q_values))
+                        if return_q_values:
+                            return action, q_values
+                        return action
+                    return _select_action
+                agent.select_action = _make_select_action(q_net, self.device, args.eval_epsilon)
                 self.agents[agent_id] = agent
         else:
             for agent_id in self.agent_ids:
@@ -198,8 +224,12 @@ class ModelEvaluator:
         flee_str = getattr(args, 'flee_robots', '')
         self.flee_robots = set(int(x) for x in flee_str.split(',') if x.strip()) if flee_str else set()
 
+        seek_str = getattr(args, 'seek_charger_robots', '')
+        self.seek_charger_robots = set(int(x) for x in seek_str.split(',') if x.strip()) if seek_str else set()
+
         for label, s in [('STAY', self.scripted_robots), ('RANDOM', self.random_robots),
-                         ('SAFE_RANDOM', self.safe_random_robots), ('FLEE', self.flee_robots)]:
+                         ('SAFE_RANDOM', self.safe_random_robots), ('FLEE', self.flee_robots),
+                         ('SEEK_CHARGER', self.seek_charger_robots)]:
             if s:
                 print(f"  robots [{sorted(s)}] → {label} during eval")
 
@@ -280,6 +310,7 @@ class ModelEvaluator:
                 is_random       = robot_id in self.random_robots
                 is_safe_random  = robot_id in self.safe_random_robots
                 is_flee         = robot_id in self.flee_robots
+                is_seek_charger = robot_id in self.seek_charger_robots
 
                 for turn in range(n_turns):
                     # 記錄行動前的狀態
@@ -335,6 +366,21 @@ class ModelEvaluator:
                         q_values = np.zeros(5, dtype=np.float32)
                         agent_q_values = {action_names[i]: 0.0 for i in range(len(action_names))}
                         print(f"  {agent_id}{turn_label} [FLEE] Selected: {action_names[action]}")
+                    elif is_seek_charger:
+                        # Seek-charger heuristic: move toward charger, STAY when on it
+                        n_others = self.num_robots - 1
+                        charger_col = 3 + 4 + n_others * 3  # x,y,energy + 4 walls + others*3
+                        cdx = obs[charger_col]      # positive = charger is RIGHT
+                        cdy = obs[charger_col + 1]  # positive = charger is DOWN
+                        if abs(cdx) < 0.01 and abs(cdy) < 0.01:
+                            action = 4  # STAY at charger
+                        elif abs(cdx) >= abs(cdy):
+                            action = 3 if cdx > 0.01 else 2  # RIGHT or LEFT
+                        else:
+                            action = 1 if cdy > 0.01 else 0  # DOWN or UP
+                        q_values = np.zeros(5, dtype=np.float32)
+                        agent_q_values = {action_names[i]: 0.0 for i in range(len(action_names))}
+                        print(f"  {agent_id}{turn_label} [SEEK_CHARGER] Selected: {action_names[action]}")
                     else:
                         # Normal Q-network
                         action, q_values = agent.select_action(obs, eval_mode=True, return_q_values=True)
@@ -927,10 +973,10 @@ def main():
     parser.add_argument("--robot-1-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 1")
     parser.add_argument("--robot-2-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 2")
     parser.add_argument("--robot-3-speed", type=int, default=1, help="Move speed (teleport N cells) for robot 3")
-    parser.add_argument("--e-move", type=int, default=1, help="Energy cost per move")
+    parser.add_argument("--e-move", type=float, default=1, help="Energy cost per move")
     parser.add_argument("--e-charge", type=float, default=1.5, help="Energy gain per charge")
-    parser.add_argument("--e-collision", type=int, default=3, help="Energy loss per collision (互撞或被推人時的傷害)")
-    parser.add_argument("--e-boundary", type=int, default=50, help="Energy loss when hitting wall/boundary (撞牆懲罰)")
+    parser.add_argument("--e-collision", type=float, default=3, help="Energy loss per collision (互撞或被推人時的傷害)")
+    parser.add_argument("--e-boundary", type=float, default=50, help="Energy loss when hitting wall/boundary (撞牆懲罰)")
     parser.add_argument("--charger-positions", type=str, default=None,
                        help='Charger positions as "y1,x1;y2,x2;..." (e.g., "0,0;0,2;2,0;2,2"). Use -1,-1 to disable a charger. Default: four corners')
     parser.add_argument("--dust-max", type=float, default=10.0, help="Max dust per normal cell")
@@ -983,6 +1029,8 @@ def main():
                         help='Comma-separated robot IDs that use wall-avoiding random walk during eval, e.g. "1"')
     parser.add_argument("--flee-robots", type=str, default="",
                         help='Comma-separated robot IDs that use flee heuristic during eval, e.g. "1"')
+    parser.add_argument("--seek-charger-robots", type=str, default="",
+                        help='Comma-separated robot IDs that walk toward charger during eval, e.g. "1"')
     parser.add_argument("--random-start-robots", type=str, default="",
                         help='Comma-separated robot IDs to randomize start position each episode, e.g. "0"')
     parser.add_argument("--robot-start-positions", type=str, default=None,
@@ -1010,6 +1058,20 @@ def main():
                         help='Max energy (None=no cap, overcharge allowed)')
     parser.add_argument("--e-decay", type=float, default=0.0,
                         help='Passive energy drain per step for all alive robots')
+
+    # Attack power per robot
+    parser.add_argument("--robot-0-attack-power", type=float, default=None)
+    parser.add_argument("--robot-1-attack-power", type=float, default=None)
+    parser.add_argument("--robot-2-attack-power", type=float, default=None)
+    parser.add_argument("--robot-3-attack-power", type=float, default=None)
+
+    # Thief spawn
+    parser.add_argument("--thief-spawn", action="store_true", default=False,
+                        help='Weak spawns adjacent to charger, Strong spawns far')
+
+    # Number of eval episodes
+    parser.add_argument("--num-eval-episodes", type=int, default=1,
+                        help='Number of evaluation episodes to run')
 
     args = parser.parse_args()
 
