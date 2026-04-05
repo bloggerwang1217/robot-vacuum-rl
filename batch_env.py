@@ -58,6 +58,24 @@ class BatchRobotVacuumEnv:
         speeds = env_kwargs.get('robot_speeds', None) or [1] * R
         self.robot_speeds = list(speeds)
 
+        # ── Docking config (consecutive steps on charger before charging) ──
+        default_dock = int(env_kwargs.get('docking_steps', 0))
+        robot_docking = env_kwargs.get('robot_docking_steps', None)
+        if robot_docking is not None:
+            self.docking_steps = np.array(robot_docking, dtype=np.int32)  # (R,)
+        else:
+            self.docking_steps = np.full(R, default_dock, dtype=np.int32)  # (R,)
+        self.docking_enabled = np.any(self.docking_steps > 0)
+
+        # ── Stun config (forced STAY after taking collision damage) ────────
+        default_stun = int(env_kwargs.get('stun_steps', 0))
+        robot_stun = env_kwargs.get('robot_stun_steps', None)
+        if robot_stun is not None:
+            self.stun_steps = np.array(robot_stun, dtype=np.int32)  # (R,)
+        else:
+            self.stun_steps = np.full(R, default_stun, dtype=np.int32)  # (R,)
+        self.stun_enabled = np.any(self.stun_steps > 0)
+
         # ── Per-robot attack power (damage dealt when this robot collides) ─
         attack_powers = env_kwargs.get('robot_attack_powers', None)
         if attack_powers is not None:
@@ -156,6 +174,13 @@ class BatchRobotVacuumEnv:
         self.dust_collected         = np.zeros((N, R),    dtype=np.float32)
         self.died_this_step         = np.zeros((N, R),    dtype=bool)
 
+        # Docking state: consecutive steps each robot has been on a charger
+        self.docking_counter = np.zeros((N, R), dtype=np.int32)
+
+        # Stun state: remaining forced-STAY steps after collision damage
+        self.stun_counter = np.zeros((N, R), dtype=np.int32)
+        self.stun_just_set = np.zeros((N, R), dtype=bool)  # prevent same-step decrement
+
         if self.dust_enabled:
             self.dust = np.zeros((N, n, n), dtype=np.float32)
 
@@ -195,6 +220,12 @@ class BatchRobotVacuumEnv:
         """
         N, n, R = self.N, self.n, self.R
         rid = robot_id
+
+        # ── Stun: force STAY if stunned (decrement in advance_step) ──────
+        if self.stun_enabled:
+            stunned = self.stun_counter[:, rid] > 0
+            actions = actions.copy()
+            actions[stunned] = _STAY
 
         # ── Reset per-step tracking ────────────────────────────────────────
         # NOTE: prev_energy and died_this_step are NOT reset here.
@@ -273,10 +304,24 @@ class BatchRobotVacuumEnv:
             self.pos[can_push, j,   1] = kbx[can_push]
             self.energy[can_push, j]  -= self.attack_powers[rid]
             self.active_collisions_with[can_push, rid, j] += 1
+            # Knockback resets victim's docking counter (pushed off charger)
+            if self.docking_enabled:
+                self.docking_counter[can_push, j] = 0
+            # Stun victim on knockback
+            if self.stun_enabled:
+                self.stun_counter[can_push, j] = self.stun_steps[j]
+                self.stun_just_set[can_push, j] = True
 
             # stationary_blocked: attacker stays, victim takes damage
             self.energy[stationary, j] -= self.attack_powers[rid]
             self.active_collisions_with[stationary, rid, j] += 1
+            # Reset victim's docking counter on stationary hit too
+            if self.docking_enabled:
+                self.docking_counter[stationary, j] = 0
+            # Stun victim on stationary hit too
+            if self.stun_enabled:
+                self.stun_counter[stationary, j] = self.stun_steps[j]
+                self.stun_just_set[stationary, j] = True
 
         # ── Normal move (no collision) ─────────────────────────────────────
         free_move = can_move & ~is_any_collision
@@ -294,16 +339,42 @@ class BatchRobotVacuumEnv:
             # stays True until robot_j's own next step applies the penalty.
             self.died_this_step[:, r] |= just_died
 
-        # ── Charging (only on last turn — not multiplied by speed) ────────
+        # ── Docking counter update (only on last turn) ────────────────────
         if is_last_turn:
             ry = self.pos[:, rid, 0]    # (N,) current y
             rx = self.pos[:, rid, 1]    # (N,) current x
 
+            # Check if robot is on any charger (and not stunned)
+            cr = self.charger_range
+            on_any_charger = np.zeros(N, dtype=bool)
+            for cy, cx in self.charger_positions:
+                on_any_charger |= (self.alive[:, rid]
+                                   & (np.abs(ry - cy) <= cr)
+                                   & (np.abs(rx - cx) <= cr))
+            # Stunned robots cannot accumulate docking progress
+            if self.stun_enabled:
+                on_any_charger = on_any_charger & (self.stun_counter[:, rid] == 0)
+
+            # Increment counter for robots on charger, reset for those not
+            self.docking_counter[:, rid] = np.where(
+                on_any_charger,
+                self.docking_counter[:, rid] + 1,
+                0)
+
+        # ── Charging (only on last turn — not multiplied by speed) ────────
+        if is_last_turn:
             cr = self.charger_range
             for cy, cx in self.charger_positions:
                 in_range = (self.alive[:, rid]
                             & (np.abs(ry - cy) <= cr)
                             & (np.abs(rx - cx) <= cr))   # (N,)
+                if not np.any(in_range):
+                    continue
+
+                # Docking gate: only charge if docking counter meets threshold
+                if self.docking_enabled:
+                    in_range = in_range & (self.docking_counter[:, rid] >= self.docking_steps[rid])
+
                 if not np.any(in_range):
                     continue
 
@@ -396,6 +467,17 @@ class BatchRobotVacuumEnv:
             done_envs: list of env indices that finished this step
         """
         self.steps += 1
+
+        # ── Stun: decrement counters once per game step ────────────────
+        #    Skip decrement for stuns set THIS step (prevent off-by-one)
+        if self.stun_enabled:
+            can_decrement = ~self.stun_just_set
+            self.stun_counter = np.where(
+                can_decrement,
+                np.maximum(self.stun_counter - 1, 0),
+                self.stun_counter,
+            )
+            self.stun_just_set[:] = False
 
         # Note: passive energy decay is now applied per-robot inside step_single()
         # so decay deaths are properly captured in rewards.
@@ -531,6 +613,9 @@ class BatchRobotVacuumEnv:
         self.active_collisions_with[env_idx] = 0
         self.died_this_step[env_idx]         = False
         self.dust_collected[env_idx]         = 0.0
+        self.docking_counter[env_idx]        = 0
+        self.stun_counter[env_idx]           = 0
+        self.stun_just_set[env_idx]          = False
         if self.dust_enabled:
             self.dust[env_idx] = 0.0
 

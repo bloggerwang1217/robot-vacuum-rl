@@ -56,7 +56,15 @@ def parse_args():
     p.add_argument("--scripted-robots", type=str, default="")
     p.add_argument("--robot-start-positions", type=str, default=None,
                    help="Fixed start positions 'y0,x0;y1,x1;...'")
+    p.add_argument("--docking-steps", type=int, default=0)
+    p.add_argument("--robot-0-docking-steps", type=int, default=None)
+    p.add_argument("--robot-1-docking-steps", type=int, default=None)
+    p.add_argument("--stun-steps", type=int, default=0)
+    p.add_argument("--robot-0-stun-steps", type=int, default=None)
+    p.add_argument("--robot-1-stun-steps", type=int, default=None)
     p.add_argument("--no-noisy", action="store_true")
+    p.add_argument("--no-c51", action="store_true")
+    p.add_argument("--no-dueling", action="store_true")
     p.add_argument("--v-min", type=float, default=-120)
     p.add_argument("--v-max", type=float, default=20)
     p.add_argument("--eval-episodes", type=int, default=200)
@@ -92,7 +100,19 @@ def build_env(args):
         'exclusive_charging': args.exclusive_charging,
         'dust_enabled': not args.no_dust,
         'energy_cap': args.energy_cap,
+        'docking_steps': args.docking_steps,
+        'stun_steps': args.stun_steps,
     }
+    # Per-robot docking
+    dock_list = [getattr(args, 'robot_0_docking_steps', None),
+                 getattr(args, 'robot_1_docking_steps', None)][:R]
+    if any(d is not None for d in dock_list):
+        env_kwargs['robot_docking_steps'] = [d if d is not None else args.docking_steps for d in dock_list]
+    # Per-robot stun
+    stun_list = [getattr(args, 'robot_0_stun_steps', None),
+                 getattr(args, 'robot_1_stun_steps', None)][:R]
+    if any(s is not None for s in stun_list):
+        env_kwargs['robot_stun_steps'] = [s if s is not None else args.stun_steps for s in stun_list]
     if args.robot_start_positions:
         rsp = {}
         for i, pair in enumerate(args.robot_start_positions.split(";")):
@@ -102,14 +122,17 @@ def build_env(args):
     return env_kwargs, energies, attacks, speeds
 
 
-def load_models(checkpoint_dir, obs_dim, action_dim, device, noisy, v_min=-120, v_max=20):
+def load_models(checkpoint_dir, obs_dim, action_dim, device, noisy, v_min=-120, v_max=20, use_c51=True, use_dueling=True):
     models = []
     rid = 0
     while True:
         path = os.path.join(checkpoint_dir, f"robot_{rid}.pt")
         if not os.path.exists(path):
             break
-        net = C51DQN(action_dim, obs_dim, num_atoms=51, v_min=v_min, v_max=v_max, dueling=True, noisy=noisy)
+        if use_c51:
+            net = C51DQN(action_dim, obs_dim, num_atoms=51, v_min=v_min, v_max=v_max, dueling=use_dueling, noisy=noisy)
+        else:
+            net = DQN(action_dim, obs_dim)
         net.load_state_dict(torch.load(path, map_location=device, weights_only=True))
         net.to(device)
         net.eval()
@@ -149,7 +172,7 @@ def eval_checkpoint(checkpoint_dir, args, env_kwargs, device):
 
     v_min = getattr(args, 'v_min', -120)
     v_max = getattr(args, 'v_max', 20)
-    models = load_models(checkpoint_dir, obs_dim, action_dim, device, noisy=not args.no_noisy, v_min=v_min, v_max=v_max)
+    models = load_models(checkpoint_dir, obs_dim, action_dim, device, noisy=not args.no_noisy, v_min=v_min, v_max=v_max, use_c51=not args.no_c51, use_dueling=not args.no_dueling)
 
     # Reset (uses robot_start_positions if set in env_kwargs)
     env.reset()
@@ -163,6 +186,7 @@ def eval_checkpoint(checkpoint_dir, args, env_kwargs, device):
     alive_at_end = np.ones((N, R), dtype=bool)
     death_step = np.full((N, R), args.max_steps, dtype=np.int32)
     total_collisions = np.zeros((N, R), dtype=np.int32)  # hits given
+    off_charger_collisions = np.zeros((N, R), dtype=np.int32)  # hits given while NOT on charger
     total_rewards = np.zeros((N, R), dtype=np.float32)
     charger_steps = np.zeros((N, R), dtype=np.int32)  # steps on charger
     dist_to_opponent_sum = np.zeros((N,), dtype=np.float32)  # r0-r1 distance
@@ -204,7 +228,13 @@ def eval_checkpoint(checkpoint_dir, args, env_kwargs, device):
                 total_rewards[:, rid] += env.energy[:, rid] - env.prev_energy[:, rid]  # approx
 
             # Track collisions (hits given by rid)
-            total_collisions[:, rid] += env.active_collisions_with[:, rid, :].sum(axis=1)
+            hits_this_turn = env.active_collisions_with[:, rid, :].sum(axis=1)
+            total_collisions[:, rid] += hits_this_turn
+            # Off-charger collisions: rid gave hits while NOT standing on any charger
+            on_charger_rid = np.zeros(N, dtype=bool)
+            for cp_ in env.charger_positions:
+                on_charger_rid |= (env.pos[:, rid, 0] == cp_[0]) & (env.pos[:, rid, 1] == cp_[1])
+            off_charger_collisions[:, rid] += hits_this_turn * (~on_charger_rid).astype(np.int32)
 
         # End of timestep tracking
         for rid in range(R):
@@ -236,12 +266,14 @@ def eval_checkpoint(checkpoint_dir, args, env_kwargs, device):
         sole = (alive_at_end[:, rid] & (num_alive == 1)).sum()
         avg_death = death_step[~alive_at_end[:, rid], rid].mean() if (~alive_at_end[:, rid]).any() else args.max_steps
         avg_coll = total_collisions[:, rid].mean()
+        avg_off_charger_coll = off_charger_collisions[:, rid].mean()
         avg_charger = charger_steps[:, rid].mean()
 
         metrics[f"{prefix}_survival_rate"] = survived / N
         metrics[f"{prefix}_sole_winner_rate"] = sole / N
         metrics[f"{prefix}_avg_death_step"] = float(avg_death)
         metrics[f"{prefix}_avg_collisions"] = float(avg_coll)
+        metrics[f"{prefix}_avg_off_charger_collisions"] = float(avg_off_charger_coll)
         metrics[f"{prefix}_avg_charger_steps"] = float(avg_charger)
 
     metrics["both_alive_rate"] = (num_alive == R).sum() / N
@@ -302,9 +334,9 @@ def main():
     # ── Plot ──────────────────────────────────────────────────────────────
     eps = np.array(episodes) / 1e6  # in millions
 
-    fig = plt.figure(figsize=(16, 12))
+    fig = plt.figure(figsize=(16, 16))
     fig.suptitle(f"Behavioral Evolution: {os.path.basename(base)}", fontsize=14, fontweight='bold')
-    gs = GridSpec(3, 2, figure=fig, hspace=0.35, wspace=0.3)
+    gs = GridSpec(4, 2, figure=fig, hspace=0.35, wspace=0.3)
 
     colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12']
 
@@ -378,6 +410,32 @@ def main():
     ax6.legend(fontsize=8)
     ax6.set_ylim(-0.05, 1.05)
     ax6.grid(True, alpha=0.3)
+
+    # 7. Off-charger collisions (active pursuit indicator)
+    ax7 = fig.add_subplot(gs[3, 0])
+    for rid in range(R):
+        off_colls = [all_metrics[ep][f"r{rid}_avg_off_charger_collisions"] for ep in episodes]
+        ax7.plot(eps, off_colls, color=colors[rid], label=f"r{rid} off-charger hits", linewidth=2)
+    ax7.set_xlabel("Training Episodes (M)")
+    ax7.set_ylabel("Avg Off-Charger Hits / Episode")
+    ax7.set_title("Off-Charger Aggression (Active Pursuit Indicator)")
+    ax7.legend(fontsize=8)
+    ax7.grid(True, alpha=0.3)
+
+    # 8. Off-charger ratio (off-charger hits / total hits)
+    if R >= 2:
+        ax8 = fig.add_subplot(gs[3, 1])
+        for rid in range(R):
+            total = [all_metrics[ep][f"r{rid}_avg_collisions"] for ep in episodes]
+            off = [all_metrics[ep][f"r{rid}_avg_off_charger_collisions"] for ep in episodes]
+            ratio = [o / t if t > 0.01 else 0.0 for o, t in zip(off, total)]
+            ax8.plot(eps, ratio, color=colors[rid], label=f"r{rid} off-charger ratio", linewidth=2)
+        ax8.set_xlabel("Training Episodes (M)")
+        ax8.set_ylabel("Ratio")
+        ax8.set_title("Off-Charger Hit Ratio (off / total)")
+        ax8.legend(fontsize=8)
+        ax8.set_ylim(-0.05, 1.05)
+        ax8.grid(True, alpha=0.3)
 
     output = args.output or os.path.join(base, "evolution_plot.png")
     plt.savefig(output, dpi=150, bbox_inches='tight')

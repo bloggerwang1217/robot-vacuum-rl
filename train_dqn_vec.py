@@ -52,16 +52,36 @@ class SharedBufferDQNAgent:
         self.batch_size = args.batch_size
         self.n_step = getattr(args, 'n_step', 1)
 
-        # Epsilon configuration
+        # Epsilon configuration (per-robot overrides global args)
         self.use_epsilon_decay = args.use_epsilon_decay
-        self.epsilon_schedule = getattr(args, 'epsilon_schedule', 'linear')
+        try:
+            robot_idx = int(agent_id.split('_')[1])
+        except (IndexError, ValueError):
+            robot_idx = None
+        if robot_idx is not None:
+            _es = getattr(args, f'robot_{robot_idx}_epsilon_start', None)
+            _ee = getattr(args, f'robot_{robot_idx}_epsilon_end', None)
+            _sc = getattr(args, f'robot_{robot_idx}_epsilon_schedule', None)
+            eps_start = _es if _es is not None else args.epsilon_start
+            eps_end   = _ee if _ee is not None else args.epsilon_end
+            schedule  = _sc if _sc is not None else getattr(args, 'epsilon_schedule', 'linear')
+        else:
+            eps_start = args.epsilon_start
+            eps_end   = args.epsilon_end
+            schedule  = getattr(args, 'epsilon_schedule', 'linear')
+        self.epsilon_schedule = schedule
         if self.use_epsilon_decay:
-            self.epsilon = args.epsilon_start
-            self.epsilon_start = args.epsilon_start
-            self.epsilon_end = args.epsilon_end
+            self.epsilon       = eps_start
+            self.epsilon_start = eps_start
+            self.epsilon_end   = eps_end
             self.epsilon_decay = args.epsilon_decay
         else:
             self.epsilon = args.epsilon
+
+        # Shape params for exp_tail / sigmoid schedules
+        self.exp_tail_k = getattr(args, 'exp_tail_k', 15.0)
+        self.sigmoid_s  = getattr(args, 'sigmoid_s',  14.0)
+        self.sigmoid_c  = getattr(args, 'sigmoid_c',  0.45)
 
         # Eval epsilon
         self.eval_epsilon = getattr(args, 'eval_epsilon', 0.0)
@@ -279,15 +299,30 @@ class SharedBufferDQNAgent:
             self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
     def set_epsilon_by_progress(self, progress: float):
-        """Set epsilon based on training progress (0.0 to 1.0)"""
+        """Set epsilon based on training progress (0.0 to 1.0).
+
+        Schedules:
+          linear      : ε = start + (end-start) * progress
+          exponential : ε = start * (end/start)^progress
+          exp_tail    : ε = end + (start-end) * exp(-k*progress)
+                        uses epsilon_decay as k (default 15)
+          sigmoid     : ε = end + (start-end) / (1 + exp(s*(progress-c)))
+                        s = epsilon_decay (default 14), c = 0.45
+        """
         if self.use_epsilon_decay:
+            x = progress
             if self.epsilon_schedule == 'exponential':
-                # Exponential decay: ε = ε_start * (ε_end/ε_start)^progress
-                # At progress=0 → ε_start, at progress=1 → ε_end
-                self.epsilon = self.epsilon_start * (self.epsilon_end / self.epsilon_start) ** progress
+                self.epsilon = self.epsilon_start * (self.epsilon_end / self.epsilon_start) ** x
+            elif self.epsilon_schedule == 'exp_tail':
+                k = getattr(self, 'exp_tail_k', 15.0)
+                self.epsilon = self.epsilon_end + (self.epsilon_start - self.epsilon_end) * np.exp(-k * x)
+            elif self.epsilon_schedule == 'sigmoid':
+                s = getattr(self, 'sigmoid_s', 14.0)
+                c = getattr(self, 'sigmoid_c', 0.45)
+                self.epsilon = self.epsilon_end + (self.epsilon_start - self.epsilon_end) / (1.0 + np.exp(s * (x - c)))
             else:
-                # Linear decay from epsilon_start to epsilon_end
-                self.epsilon = self.epsilon_start + (self.epsilon_end - self.epsilon_start) * progress
+                # Linear
+                self.epsilon = self.epsilon_start + (self.epsilon_end - self.epsilon_start) * x
 
     def save(self, filepath: str):
         # 若 torch.compile 已包裝成 OptimizedModule，取出原始權重存檔
@@ -384,6 +419,23 @@ class SumTree:
                 idx = 2 * idx + 2
         return idx - (self.capacity - 1)
 
+    def sample_batch(self, values: np.ndarray) -> np.ndarray:
+        """Vectorized batch tree walk. values shape: (n,). Returns data indices (n,)."""
+        n = len(values)
+        idx = np.zeros(n, dtype=np.int64)  # start at root
+        depth = int(np.ceil(np.log2(self.capacity + 1)))
+        for _ in range(depth):
+            left = 2 * idx + 1
+            right = left + 1
+            # Clamp to valid tree range
+            left = np.minimum(left, len(self.tree) - 1)
+            right = np.minimum(right, len(self.tree) - 1)
+            left_val = self.tree[left]
+            go_right = values > left_val
+            values = np.where(go_right, values - left_val, values)
+            idx = np.where(go_right, right, left)
+        return idx - (self.capacity - 1)
+
     @property
     def total(self) -> float:
         return float(self.tree[0])
@@ -395,9 +447,10 @@ class PrioritizedReplayBuffer:
     Same append interface as NumpyReplayBuffer; sample() additionally returns
     indices and IS-correction weights.
     """
-    def __init__(self, capacity: int, obs_dim: int, alpha: float = 0.6):
+    def __init__(self, capacity: int, obs_dim: int, alpha: float = 0.6, recency_lambda: float = 0.0):
         self.capacity = capacity
         self.alpha = alpha
+        self.recency_lambda = recency_lambda
         self.tree = SumTree(capacity)
 
         self._states      = np.zeros((capacity, obs_dim), dtype=np.float32)
@@ -406,6 +459,8 @@ class PrioritizedReplayBuffer:
         self._rewards     = np.zeros(capacity, dtype=np.float32)
         self._dones       = np.zeros(capacity, dtype=np.float32)
         self._n_steps     = np.ones(capacity,  dtype=np.float32)
+        self._timestamps  = np.zeros(capacity, dtype=np.int64)
+        self._write_count = 0
         self._ptr  = 0
         self._size = 0
         self._max_priority = 1.0
@@ -417,6 +472,8 @@ class PrioritizedReplayBuffer:
         self._rewards[i]     = reward
         self._dones[i]       = float(done)
         self._n_steps[i]     = n_step
+        self._timestamps[i]  = self._write_count
+        self._write_count   += 1
         self.tree.update(i, self._max_priority ** self.alpha)
 
     def append(self, transition):
@@ -438,29 +495,56 @@ class PrioritizedReplayBuffer:
             self._rewards[i]     = rewards[j]
             self._dones[i]       = dones[j]
             self._n_steps[i]     = n_steps[j]
+            self._timestamps[i]  = self._write_count + j
             self.tree.update(i, priority)
+        self._write_count += n
         self._ptr  = int((self._ptr + n) % self.capacity)
         self._size = min(self._size + n, self.capacity)
 
     def sample(self, batch_size: int, beta: float = 0.4):
         """
-        Stratified sampling: divide [0, total] into batch_size segments,
-        draw one sample per segment.
+        Stratified sampling with optional recency weighting.
+        When recency_lambda > 0, draws 2x candidates from the tree then
+        resamples using recency weights, so the tree structure is unchanged.
         Returns (states, actions, rewards, next_states, dones, n_steps, indices, weights).
         """
         total = self.tree.total
-        segment = total / batch_size
+        use_recency = self.recency_lambda > 0.0
 
-        indices = np.zeros(batch_size, dtype=np.int64)
-        priorities = np.zeros(batch_size, dtype=np.float64)
+        # Draw candidates (2x if recency resampling, else exactly batch_size)
+        n_candidates = batch_size * 2 if use_recency else batch_size
+        segment = total / n_candidates
 
-        for i in range(batch_size):
-            lo, hi = segment * i, segment * (i + 1)
-            value = np.random.uniform(lo, hi)
-            idx = self.tree.sample(value)
-            idx = int(np.clip(idx, 0, self._size - 1))
-            indices[i] = idx
-            priorities[i] = self.tree.tree[idx + self.capacity - 1]
+        # Vectorized stratified sampling: generate all values at once, walk tree in batch
+        lo = segment * np.arange(n_candidates)
+        hi = lo + segment
+        values = np.random.uniform(lo, hi)
+        cand_indices = self.tree.sample_batch(values)
+        cand_indices = np.clip(cand_indices, 0, self._size - 1)
+        cand_priorities = self.tree.tree[cand_indices + self.capacity - 1]
+
+        if use_recency:
+            # Recency weight: exp(-lambda * age / capacity), age = write_count - timestamp
+            ages = self._write_count - self._timestamps[cand_indices]
+            recency_w = np.exp(-self.recency_lambda * ages / max(self.capacity, 1))
+            combined = cand_priorities * recency_w
+            combined = combined / combined.sum()
+            chosen = np.random.choice(n_candidates, size=batch_size, replace=False, p=combined)
+            indices = cand_indices[chosen]
+            priorities = cand_priorities[chosen]
+            # Deduplicate with numpy: replace duplicates with unused candidates
+            _, first_occ = np.unique(indices, return_index=True)
+            if len(first_occ) < batch_size:
+                used = set(indices.tolist())
+                unused = [c for c in range(n_candidates) if cand_indices[c] not in used]
+                dup_pos = [i for i in range(batch_size) if i not in first_occ]
+                for pos, rep in zip(dup_pos, unused):
+                    indices[pos] = cand_indices[rep]
+                    priorities[pos] = cand_priorities[rep]
+                    used.add(indices[pos])
+        else:
+            indices = cand_indices
+            priorities = cand_priorities
 
         # IS weights: w_i = (N * P(i))^{-beta}, normalised by max weight
         probs = priorities / total
@@ -561,14 +645,23 @@ class VectorizedMultiAgentTrainer:
         frozen_str = getattr(args, 'frozen_robots', '')
         self.frozen_robots = set(int(x) for x in frozen_str.split(',') if x.strip()) if frozen_str else set()
 
+        # Auto-freeze robots: automatically frozen once their epsilon reaches epsilon_end
+        auto_freeze_str = getattr(args, 'auto_freeze_robots', '')
+        self.auto_freeze_robots = set(int(x) for x in auto_freeze_str.split(',') if x.strip()) if auto_freeze_str else set()
+        self._auto_freeze_logged = set()  # track which robots have been logged as frozen
+
         # Seek-charger robots: walk toward charger and STAY, not trained
         seek_str = getattr(args, 'seek_charger_robots', '')
         self.seek_charger_robots = set(int(x) for x in seek_str.split(',') if x.strip()) if seek_str else set()
+        # Opportunistic charger: seek charger when safe, flee when opponent near
+        opp_str = getattr(args, 'opportunistic_charger_robots', '')
+        self.opportunistic_charger_robots = set(int(x) for x in opp_str.split(',') if x.strip()) if opp_str else set()
         self._agent_types_mode = getattr(args, 'agent_types_mode', 'off')
 
         for label, s in [('STAY', self.scripted_robots), ('RANDOM', self.random_robots),
                          ('SAFE_RANDOM', self.safe_random_robots), ('FLEE', self.flee_robots),
-                         ('FROZEN', self.frozen_robots), ('SEEK_CHARGER', self.seek_charger_robots)]:
+                         ('FROZEN', self.frozen_robots), ('SEEK_CHARGER', self.seek_charger_robots),
+                         ('OPP_CHARGER', self.opportunistic_charger_robots)]:
             if s:
                 print(f"  robots [{sorted(s)}] → {label} (not trained)")
 
@@ -609,6 +702,34 @@ class VectorizedMultiAgentTrainer:
         else:
             robot_attack_powers = None
 
+        # Build per-robot docking steps
+        all_docking = [
+            getattr(args, 'robot_0_docking_steps', None),
+            getattr(args, 'robot_1_docking_steps', None),
+        ]
+        if any(d is not None for d in all_docking[:self.num_robots]):
+            robot_docking_steps = [
+                d if d is not None else args.docking_steps
+                for d in all_docking[:self.num_robots]
+            ]
+            print(f"Per-robot docking steps: {robot_docking_steps}")
+        else:
+            robot_docking_steps = None
+
+        # Build per-robot stun steps
+        all_stun = [
+            getattr(args, 'robot_0_stun_steps', None),
+            getattr(args, 'robot_1_stun_steps', None),
+        ]
+        if any(s is not None for s in all_stun[:self.num_robots]):
+            robot_stun_steps = [
+                s if s is not None else args.stun_steps
+                for s in all_stun[:self.num_robots]
+            ]
+            print(f"Per-robot stun steps: {robot_stun_steps}")
+        else:
+            robot_stun_steps = None
+
         env_kwargs = {
             'n': args.env_n,
             'num_robots': self.num_robots,
@@ -630,8 +751,10 @@ class VectorizedMultiAgentTrainer:
             'dust_enabled': not args.no_dust,
             'exclusive_charging': args.exclusive_charging,
             'charger_range': args.charger_range,
-            'random_start_robots': set(
-                int(x) for x in getattr(args, 'random_start_robots', '').split(',') if x.strip()
+            'random_start_robots': (
+                set(range(args.num_robots))
+                if getattr(args, 'random_start_robots', 'all') == 'all'
+                else set(int(x) for x in args.random_start_robots.split(',') if x.strip())
             ),
             'robot_start_positions': robot_start_positions,
             'agent_types_mode': args.agent_types_mode,
@@ -644,6 +767,10 @@ class VectorizedMultiAgentTrainer:
             'thief_spawn': args.thief_spawn,
             'reward_mode': args.reward_mode,
             'reward_alpha': args.reward_alpha,
+            'docking_steps': args.docking_steps,
+            'robot_docking_steps': robot_docking_steps,
+            'stun_steps': args.stun_steps,
+            'robot_stun_steps': robot_stun_steps,
         }
 
         # Create vectorized environment
@@ -711,7 +838,8 @@ class VectorizedMultiAgentTrainer:
         if self.use_per:
             per_alpha = getattr(args, 'per_alpha', 0.6)
             self.memories = {
-                agent_id: PrioritizedReplayBuffer(args.memory_size, observation_dim, alpha=per_alpha)
+                agent_id: PrioritizedReplayBuffer(args.memory_size, observation_dim, alpha=per_alpha,
+                                                   recency_lambda=getattr(args, 'recency_lambda', 0.0))
                 for agent_id in self.agent_ids
             }
             print(f"Using Prioritized Experience Replay (alpha={per_alpha})")
@@ -805,6 +933,14 @@ class VectorizedMultiAgentTrainer:
         self._episode_dist_to_charger_count = np.zeros((_n, self.n_agents), dtype=np.int32)
         # First collision step
         self._episode_first_collision_step = np.full(_n, -1, dtype=np.int32)
+        # Pursuit metrics: off-charger hits (主動追殺指標)
+        self._episode_off_charger_hits = np.zeros((_n, self.n_agents), dtype=np.int32)  # 不在充電座時的碰撞
+        self._episode_on_charger_hits = np.zeros((_n, self.n_agents), dtype=np.int32)   # 在充電座時的碰撞
+        self._episode_off_charger_kill = np.zeros(_n, dtype=bool)  # r1 被殺時 r0 不在充電座
+        # Pursuit ratio: r0 靠近 r1 的步數比例
+        self._prev_dist_r0_r1 = np.full(_n, -1, dtype=np.float32)  # -1 = not initialized
+        self._episode_approach_steps = np.zeros(_n, dtype=np.int32)  # r0 靠近 r1 的步數
+        self._episode_both_alive_steps = np.zeros(_n, dtype=np.int32)  # 雙方都活著的步數
         # Outcome tracking (rolling window for wandb)
         self._outcome_window_size = 1000
         self._outcome_r0_wins = 0
@@ -1280,6 +1416,47 @@ class VectorizedMultiAgentTrainer:
 
         return actions.astype(np.int32)
 
+    def _opportunistic_charger_actions(self, robot_id: int, obs: np.ndarray) -> np.ndarray:
+        """
+        Opportunistic charger: seek charger when r0 is far, flee when r0 is near.
+        Creates 「時而充電、時而逃跑」harassment pattern.
+        Uses env state directly (batch_env only).
+        """
+        my_pos = self.env.pos[:, robot_id]    # (N, 2) [y, x]
+        cpos = self.env.charger_positions[0]  # (y, x)
+
+        # Charger direction
+        cdx = cpos[1] - my_pos[:, 1]  # positive = RIGHT
+        cdy = cpos[0] - my_pos[:, 0]  # positive = DOWN
+        at_charger = (cdx == 0) & (cdy == 0)
+
+        # Find nearest alive opponent
+        opp_id = 1 - robot_id if self.num_robots == 2 else 0
+        opp_pos = self.env.pos[:, opp_id]
+        opp_alive = self.env.alive[:, opp_id]
+        odx = opp_pos[:, 1] - my_pos[:, 1]  # opponent direction
+        ody = opp_pos[:, 0] - my_pos[:, 0]
+        dist_to_opp = np.abs(odx) + np.abs(ody)
+
+        # Flee threshold: flee when opponent within 2 tiles
+        FLEE_DIST = 2
+        should_flee = opp_alive & (dist_to_opp <= FLEE_DIST)
+
+        # Seek-charger actions
+        h_seek = np.where(cdx > 0, 3, np.where(cdx < 0, 2, 4))
+        v_seek = np.where(cdy > 0, 1, np.where(cdy < 0, 0, 4))
+        seek_act = np.where(np.abs(cdx) >= np.abs(cdy), h_seek, v_seek)
+        seek_act[at_charger] = 4  # STAY on charger
+
+        # Flee actions (move AWAY from opponent)
+        h_flee = np.where(odx > 0, 2, np.where(odx < 0, 3, 4))
+        v_flee = np.where(ody > 0, 0, np.where(ody < 0, 1, 4))
+        flee_act = np.where(np.abs(odx) >= np.abs(ody), h_flee, v_flee)
+
+        # On charger + opponent near → flee (don't stubbornly stay)
+        actions = np.where(should_flee, flee_act, seek_act)
+        return actions.astype(np.int32)
+
     def _train_vectorized(self):
         """Training loop for vectorized environments (sequential actions)"""
         print(f"Starting vectorized training with {self.num_envs} environments (sequential mode)...")
@@ -1299,6 +1476,12 @@ class VectorizedMultiAgentTrainer:
         self._episode_dist_to_charger_sum.fill(0)
         self._episode_dist_to_charger_count.fill(0)
         self._episode_first_collision_step.fill(-1)
+        self._episode_off_charger_hits.fill(0)
+        self._episode_on_charger_hits.fill(0)
+        self._episode_off_charger_kill.fill(False)
+        self._prev_dist_r0_r1.fill(-1)
+        self._episode_approach_steps.fill(0)
+        self._episode_both_alive_steps.fill(0)
 
         # Track terminations per environment
         env_terminations = np.zeros((self.num_envs, self.n_agents), dtype=bool)
@@ -1324,11 +1507,12 @@ class VectorizedMultiAgentTrainer:
                 is_flee         = robot_id in self.flee_robots
                 is_frozen       = robot_id in self.frozen_robots
                 is_seek_charger = robot_id in self.seek_charger_robots
-                is_learning = not (is_scripted or is_random or is_safe_random or is_flee or is_frozen or is_seek_charger)
+                is_opp_charger  = robot_id in self.opportunistic_charger_robots
+                is_learning = not (is_scripted or is_random or is_safe_random or is_flee or is_frozen or is_seek_charger or is_opp_charger)
 
                 for turn_idx in range(n_turns):
                     is_last_turn = (turn_idx == n_turns - 1)
-                    # --- Action selection (5 modes) ---
+                    # --- Action selection (6 modes) ---
                     if is_scripted:
                         actions = np.full(self.num_envs, 4, dtype=np.int32)  # STAY
                     elif is_random:
@@ -1336,6 +1520,9 @@ class VectorizedMultiAgentTrainer:
                     elif is_safe_random:
                         obs = self.env.get_observation(robot_id)
                         actions = self._safe_random_actions(robot_id, obs)
+                    elif is_opp_charger:
+                        obs = self.env.get_observation(robot_id)
+                        actions = self._opportunistic_charger_actions(robot_id, obs)
                     elif is_flee:
                         obs = self.env.get_observation(robot_id)
                         actions = self._flee_actions(robot_id, obs)
@@ -1369,9 +1556,39 @@ class VectorizedMultiAgentTrainer:
                         self._episode_active_collisions[:, robot_id] += col_vec.sum(axis=1)
                         self._episode_collisions_matrix[:, robot_id, :] += col_vec
                         env_terminations[:, robot_id] |= terminated
+
+                        # --- Pursuit metrics: off-charger hit tracking ---
+                        if self.n_agents >= 2 and hasattr(self.env, 'charger_positions'):
+                            hits_given = col_vec.sum(axis=1)  # (N,) total hits this robot dealt
+                            has_hit = hits_given > 0
+                            if has_hit.any():
+                                cpos = self.env.charger_positions[0]  # (y, x)
+                                on_charger = ((self.env.pos[:, robot_id, 0] == cpos[0]) &
+                                              (self.env.pos[:, robot_id, 1] == cpos[1]))
+                                off_hit = has_hit & ~on_charger
+                                on_hit = has_hit & on_charger
+                                self._episode_off_charger_hits[off_hit, robot_id] += hits_given[off_hit]
+                                self._episode_on_charger_hits[on_hit, robot_id] += hits_given[on_hit]
+
                         # Track death step for ALL robots
                         new_deaths = terminated & (self._robot_death_step[:, robot_id] == -1)
                         self._robot_death_step[new_deaths, robot_id] = self._episode_steps[new_deaths] + 1
+
+                        # Off-charger kill: r0 killed r1 (or any robot died from r0's hit off-charger)
+                        if robot_id == 0 and self.n_agents >= 2 and hasattr(self.env, 'charger_positions'):
+                            # Check if any OTHER robot just died from r0's hit
+                            for j in range(1, self.n_agents):
+                                j_just_died = new_deaths if robot_id == j else (
+                                    (self.env.alive[:, j] == False) &
+                                    (self._robot_death_step[:, j] == self._episode_steps + 1) &
+                                    (col_vec[:, j] > 0)
+                                )
+                                if j_just_died.any():
+                                    cpos = self.env.charger_positions[0]
+                                    r0_on_charger = ((self.env.pos[:, 0, 0] == cpos[0]) &
+                                                     (self.env.pos[:, 0, 1] == cpos[1]))
+                                    self._episode_off_charger_kill[j_just_died & ~r0_on_charger] = True
+
                         # Monopoly: all weak robots (id >= 1) dead
                         if self.n_agents > 1:
                             weak_dead = (self._robot_death_step[:, 1:] != -1).all(axis=1)
@@ -1417,9 +1634,18 @@ class VectorizedMultiAgentTrainer:
                 # batch_env: self.env.pos shape (N, R, 2)
                 dy = np.abs(self.env.pos[:, 0, 0] - self.env.pos[:, 1, 0])
                 dx = np.abs(self.env.pos[:, 0, 1] - self.env.pos[:, 1, 1])
+                cur_dist = (dy + dx).astype(np.float32)
                 alive_both = self.env.alive[:, 0] & self.env.alive[:, 1]
-                self._episode_dist_sum[alive_both] += (dy + dx)[alive_both]
+                self._episode_dist_sum[alive_both] += cur_dist[alive_both]
                 self._episode_dist_steps[alive_both] += 1
+
+                # Pursuit ratio: r0 靠近 r1 的步數比例
+                initialized = self._prev_dist_r0_r1 >= 0
+                approached = alive_both & initialized & (cur_dist < self._prev_dist_r0_r1)
+                self._episode_approach_steps[approached] += 1
+                self._episode_both_alive_steps[alive_both & initialized] += 1
+                # Update prev distance (only for alive-both envs; reset on death/episode end)
+                self._prev_dist_r0_r1[alive_both] = cur_dist[alive_both]
 
             # Per-robot charger occupancy & distance to charger
             if hasattr(self.env, 'pos') and hasattr(self.env, 'charger_positions'):
@@ -1444,7 +1670,7 @@ class VectorizedMultiAgentTrainer:
             # Train (controlled by train_frequency)
             if self.global_step % self.train_frequency == 0:
                 # 每個 agent 從自己的 buffer 抽樣訓練 (skip frozen/scripted/random)
-                frozen_agent_ids = {f'robot_{i}' for i in self.frozen_robots | self.scripted_robots | self.random_robots | self.safe_random_robots | self.flee_robots | self.seek_charger_robots}
+                frozen_agent_ids = {f'robot_{i}' for i in self.frozen_robots | self.scripted_robots | self.random_robots | self.safe_random_robots | self.flee_robots | self.seek_charger_robots | self.opportunistic_charger_robots}
                 for agent_id in self.agent_ids:
                     if agent_id in frozen_agent_ids:
                         continue
@@ -1501,8 +1727,15 @@ class VectorizedMultiAgentTrainer:
                     death_str = " ".join(death_parts)
                     mono = self._monopoly_step[env_idx]
                     mono_str = f" mono@{mono}" if mono != -1 else ""
+                    # Pursuit info
+                    off_h = self._episode_off_charger_hits[env_idx, 0]
+                    on_h = self._episode_on_charger_hits[env_idx, 0]
+                    okill = "✓" if self._episode_off_charger_kill[env_idx] else ""
+                    pursuit_str = f" hunt:{off_h}/{off_h+on_h}{okill}" if (off_h + on_h) > 0 else ""
+                    bas = self._episode_both_alive_steps[env_idx]
+                    pr_str = f" pr:{self._episode_approach_steps[env_idx]/bas:.2f}" if bas > 0 else ""
                     print(f"[Episode {self.total_episodes}] Steps:{steps} | "
-                          f"{rewards_str} | Collisions({collisions_str}) | {death_str}{mono_str} | ε:{current_epsilon:.3f}")
+                          f"{rewards_str} | Collisions({collisions_str}) | {death_str}{mono_str}{pursuit_str}{pr_str} | ε:{current_epsilon:.3f}")
 
                     # 計算所有 buffer 的總大小
                     total_buffer_size = sum(len(m) for m in self.memories.values())
@@ -1559,6 +1792,25 @@ class VectorizedMultiAgentTrainer:
                     if fcs != -1:
                         log_dict["behavior/first_collision_step"] = int(fcs)
 
+                    # Pursuit metrics
+                    for i in range(self.n_agents):
+                        off_h = self._episode_off_charger_hits[env_idx, i]
+                        on_h = self._episode_on_charger_hits[env_idx, i]
+                        total_h = off_h + on_h
+                        if total_h > 0:
+                            log_dict[f"pursuit/r{i}_off_charger_hits"] = int(off_h)
+                            log_dict[f"pursuit/r{i}_on_charger_hits"] = int(on_h)
+                            log_dict[f"pursuit/r{i}_off_charger_hit_ratio"] = float(off_h) / total_h
+                    if self._episode_off_charger_kill[env_idx]:
+                        log_dict["pursuit/off_charger_kill"] = 1
+                    elif self._robot_death_step[env_idx, 1] != -1 if self.n_agents >= 2 else False:
+                        log_dict["pursuit/off_charger_kill"] = 0  # killed on charger
+                    # Pursuit ratio
+                    bas = self._episode_both_alive_steps[env_idx]
+                    if bas > 0:
+                        log_dict["pursuit/r0_pursuit_ratio"] = float(
+                            self._episode_approach_steps[env_idx]) / bas
+
                     # Episode outcome
                     n_survived = sum(1 for i in range(self.n_agents) if self._robot_death_step[env_idx, i] == -1)
                     log_dict["outcome/num_survived"] = n_survived
@@ -1603,17 +1855,33 @@ class VectorizedMultiAgentTrainer:
                 self._episode_dist_to_charger_sum[env_idx].fill(0)
                 self._episode_dist_to_charger_count[env_idx].fill(0)
                 self._episode_first_collision_step[env_idx] = -1
+                self._episode_off_charger_hits[env_idx].fill(0)
+                self._episode_on_charger_hits[env_idx].fill(0)
+                self._episode_off_charger_kill[env_idx] = False
+                self._prev_dist_r0_r1[env_idx] = -1
+                self._episode_approach_steps[env_idx] = 0
+                self._episode_both_alive_steps[env_idx] = 0
 
                 # Save models periodically (skip the very first step = offset itself)
                 new_ep = self.total_episodes - self.episode_offset
                 if new_ep > 0 and new_ep % self.args.save_frequency == 0:
                     self.save_models(f"episode_{self.total_episodes}")
 
-            # Update epsilon based on training progress (relative to this run's episodes)
+            # Update epsilon based on training progress (absolute, accounts for loaded checkpoint)
             if len(done_envs) > 0:
-                progress = (self.total_episodes - self.episode_offset) / self.args.num_episodes
+                total_planned = self.episode_offset + self.args.num_episodes
+                progress = min(1.0, self.total_episodes / max(total_planned, 1))
                 for agent in self.agents.values():
                     agent.set_epsilon_by_progress(progress)
+                # Auto-freeze: add robot to frozen_robots once epsilon reaches epsilon_end
+                for rid in self.auto_freeze_robots:
+                    agent = self.agents.get(f'robot_{rid}')
+                    if agent is not None and rid not in self.frozen_robots:
+                        if agent.epsilon <= agent.epsilon_end * 2:
+                            self.frozen_robots.add(rid)
+                            if rid not in self._auto_freeze_logged:
+                                print(f"[Auto-Freeze] robot_{rid} frozen at episode {self.total_episodes} (ε={agent.epsilon:.5f})")
+                                self._auto_freeze_logged.add(rid)
 
             self.global_step += 1
 
@@ -1724,10 +1992,20 @@ class VectorizedMultiAgentTrainer:
                     "global_step": self.global_step
                 })
 
-            # Update epsilon based on training progress
-            progress = (episode + 1) / self.args.num_episodes
+            # Update epsilon based on training progress (absolute, accounts for loaded checkpoint)
+            total_planned = getattr(self, 'episode_offset', 0) + self.args.num_episodes
+            progress = min(1.0, (episode + 1) / max(total_planned, 1))
             for agent in self.agents.values():
                 agent.set_epsilon_by_progress(progress)
+            # Auto-freeze: add robot to frozen_robots once epsilon reaches epsilon_end
+            for rid in self.auto_freeze_robots:
+                agent = self.agents.get(f'robot_{rid}')
+                if agent is not None and rid not in self.frozen_robots:
+                    if agent.epsilon <= agent.epsilon_end * 2:
+                        self.frozen_robots.add(rid)
+                        if rid not in self._auto_freeze_logged:
+                            print(f"[Auto-Freeze] robot_{rid} frozen at episode {episode + 1} (ε={agent.epsilon:.5f})")
+                            self._auto_freeze_logged.add(rid)
 
             # Save models
             if (episode + 1) % self.args.save_frequency == 0:
@@ -1793,6 +2071,18 @@ def main():
     parser.add_argument("--no-dust", action="store_true", default=False, help="Disable dust system (removes n² obs dimensions)")
     parser.add_argument("--exclusive-charging", action="store_true", default=False,
                         help="充電座獨佔模式：有其他 robot 在範圍內時充電無效")
+    parser.add_argument("--docking-steps", type=int, default=0,
+                        help="Docking 機制：robot 需連續站在充電座 N 步後才能開始充電（0=即時充電）")
+    parser.add_argument("--robot-0-docking-steps", type=int, default=None,
+                        help="Robot 0 專用 docking steps（覆蓋 --docking-steps）")
+    parser.add_argument("--robot-1-docking-steps", type=int, default=None,
+                        help="Robot 1 專用 docking steps（覆蓋 --docking-steps）")
+    parser.add_argument("--stun-steps", type=int, default=0,
+                        help="被撞後暈眩步數：robot 被碰撞後強制 STAY N 步（0=無暈眩）")
+    parser.add_argument("--robot-0-stun-steps", type=int, default=None,
+                        help="Robot 0 專用暈眩步數（覆蓋 --stun-steps）")
+    parser.add_argument("--robot-1-stun-steps", type=int, default=None,
+                        help="Robot 1 專用暈眩步數（覆蓋 --stun-steps）")
     parser.add_argument("--shuffle-step-order", action="store_true", default=False,
                         help="每步隨機化 robot 行動順序（消除 sequential stepping 的先後手優勢）")
     parser.add_argument("--charger-range", type=int, default=1,
@@ -1807,10 +2097,14 @@ def main():
                         help='Comma-separated robot IDs that use flee heuristic (no training), e.g. "1"')
     parser.add_argument("--frozen-robots", type=str, default="",
                         help='Comma-separated robot IDs that use their loaded model (greedy) but are NOT trained, e.g. "0"')
+    parser.add_argument("--auto-freeze-robots", type=str, default="",
+                        help='Comma-separated robot IDs to auto-freeze (stop training) once their epsilon reaches epsilon_end, e.g. "1"')
     parser.add_argument("--seek-charger-robots", type=str, default="",
                         help='Comma-separated robot IDs that walk toward charger and STAY (not trained), e.g. "1"')
-    parser.add_argument("--random-start-robots", type=str, default="",
-                        help='Comma-separated robot IDs to randomize start position each episode, e.g. "0"')
+    parser.add_argument("--opportunistic-charger-robots", type=str, default="",
+                        help='Comma-separated robot IDs: seek charger when r0 far, flee when r0 near (not trained)')
+    parser.add_argument("--random-start-robots", type=str, default="all",
+                        help='Comma-separated robot IDs to randomize start position each episode, "all" for all robots (default), "" to disable')
     parser.add_argument("--robot-start-positions", type=str, default=None,
                         help='Fixed start positions as "y0,x0;y1,x1;..." (overrides corner defaults), e.g. "0,0;3,3"')
     parser.add_argument("--load-model-dir", type=str, default=None,
@@ -1838,8 +2132,25 @@ def main():
     parser.add_argument("--epsilon-start", type=float, default=1.0, help="Starting epsilon for decay")
     parser.add_argument("--epsilon-end", type=float, default=0.01, help="Minimum epsilon")
     parser.add_argument("--epsilon-decay", type=float, default=0.995, help="Epsilon decay rate (only used for exponential schedule)")
-    parser.add_argument("--epsilon-schedule", type=str, default="linear", choices=["linear", "exponential"],
-                        help="Epsilon decay schedule: linear (default) or exponential")
+    parser.add_argument("--epsilon-schedule", type=str, default="linear",
+                        choices=["linear", "exponential", "exp_tail", "sigmoid"],
+                        help="Epsilon decay schedule: linear (default), exponential, exp_tail, sigmoid")
+    parser.add_argument("--exp-tail-k", type=float, default=15.0,
+                        help="exp_tail schedule: decay rate k (ε = end + (start-end)*exp(-k*x), default 15)")
+    parser.add_argument("--sigmoid-s", type=float, default=14.0,
+                        help="sigmoid schedule: steepness s (default 14)")
+    parser.add_argument("--sigmoid-c", type=float, default=0.45,
+                        help="sigmoid schedule: midpoint c in [0,1] (default 0.45)")
+
+    # Per-robot epsilon overrides (fallback to global --epsilon-* if not set)
+    for _ri in range(4):
+        parser.add_argument(f"--robot-{_ri}-epsilon-start",    type=float, default=None,
+                            help=f"robot_{_ri} epsilon start (overrides --epsilon-start)")
+        parser.add_argument(f"--robot-{_ri}-epsilon-end",      type=float, default=None,
+                            help=f"robot_{_ri} epsilon end (overrides --epsilon-end)")
+        parser.add_argument(f"--robot-{_ri}-epsilon-schedule", type=str,   default=None,
+                            choices=["linear", "exponential", "exp_tail", "sigmoid"],
+                            help=f"robot_{_ri} epsilon schedule (overrides --epsilon-schedule)")
 
     parser.add_argument("--memory-size", type=int, default=100000, help="Replay buffer size")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
@@ -1869,6 +2180,9 @@ def main():
                         help="PER IS-weight exponent β starting value (anneals to 1.0)")
     parser.add_argument("--per-beta-steps", type=int, default=100000,
                         help="Global steps over which β anneals from per-beta-start to 1.0")
+    parser.add_argument("--recency-lambda", type=float, default=0.0,
+                        help="Recency weighting strength for PER (0=disabled, >0 favours newer transitions). "
+                             "Effective only when PER is enabled.")
 
     # Vectorized training parameters
     parser.add_argument("--num-envs", type=int, default=256, help="Number of parallel environments")
@@ -1898,6 +2212,8 @@ def main():
     # Auto-evaluation after training
     parser.add_argument("--eval-after-training", action=argparse.BooleanOptionalAction, default=True, help="Run evaluation after training (use --no-eval-after-training to disable)")
     parser.add_argument("--eval-steps", type=int, default=1000, help="Max steps for evaluation")
+    parser.add_argument("--plot-evolution-after-training", action=argparse.BooleanOptionalAction, default=True,
+                        help="Auto-run plot_attack_evolution.py (greedy, model r1) after training completes (use --no-plot-evolution-after-training to disable)")
 
     args = parser.parse_args()
 
@@ -2037,6 +2353,55 @@ def main():
 
         # Run evaluation
         subprocess.run(eval_cmd)
+
+    # Auto attack-evolution plot after training
+    if getattr(args, 'plot_evolution_after_training', False):
+        import subprocess
+        run_name = args.wandb_run_name or os.path.basename(trainer.save_dir)
+        output_dir = os.path.join("./analyze", run_name)
+        os.makedirs(output_dir, exist_ok=True)
+
+        evo_cmd = [
+            "python", "plot_attack_evolution.py",
+            "--model-dir", trainer.save_dir,
+            "--r1-policy", "model",
+            "--num-points", "60",
+            "--episodes-per-ckpt", "50",
+            "--output-dir", output_dir,
+            # Env params
+            "--env-n", str(args.env_n),
+            "--e-move", str(args.e_move),
+            "--e-charge", str(args.e_charge),
+            "--e-decay", str(args.e_decay),
+            "--e-collision", str(args.e_collision),
+            "--e-boundary", str(args.e_boundary),
+            "--charger-positions", args.charger_positions,
+            "--charger-range", str(args.charger_range),
+            "--robot-0-energy", str(args.robot_0_energy),
+            "--robot-1-energy", str(args.robot_1_energy),
+            "--robot-0-speed", str(args.robot_0_speed),
+            "--robot-1-speed", str(args.robot_1_speed),
+            "--robot-0-attack", str(args.robot_0_attack_power),
+            "--robot-1-attack", str(args.robot_1_attack_power),
+            "--robot-0-docking-steps", str(args.robot_0_docking_steps or 0),
+            "--robot-1-docking-steps", str(args.robot_1_docking_steps or 0),
+            "--robot-0-stun-steps", str(args.robot_0_stun_steps),
+            "--robot-1-stun-steps", str(args.robot_1_stun_steps),
+            "--max-steps", str(args.max_episode_steps),
+        ]
+        if args.exclusive_charging:
+            evo_cmd.append("--exclusive-charging")
+        if getattr(args, 'dueling', False):
+            evo_cmd.append("--dueling")
+        if getattr(args, 'noisy', False):
+            evo_cmd.append("--noisy")
+        if getattr(args, 'c51', False):
+            evo_cmd.append("--c51")
+
+        print(f"\n{'='*50}")
+        print(f"Running attack evolution plot → {output_dir}")
+        print(f"{'='*50}\n")
+        subprocess.run(evo_cmd)
 
 
 if __name__ == "__main__":

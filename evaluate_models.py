@@ -128,6 +128,20 @@ class ModelEvaluator:
             ] if any(p is not None for p in [args.robot_0_attack_power, args.robot_1_attack_power,
                                               args.robot_2_attack_power, args.robot_3_attack_power][:self.num_robots]) else None,
             thief_spawn=getattr(args, 'thief_spawn', False),
+            docking_steps=getattr(args, 'docking_steps', 0),
+            robot_docking_steps=[
+                d if d is not None else getattr(args, 'docking_steps', 0)
+                for d in [getattr(args, 'robot_0_docking_steps', None),
+                          getattr(args, 'robot_1_docking_steps', None)][:self.num_robots]
+            ] if any(d is not None for d in [getattr(args, 'robot_0_docking_steps', None),
+                                              getattr(args, 'robot_1_docking_steps', None)][:self.num_robots]) else None,
+            stun_steps=getattr(args, 'stun_steps', 0),
+            robot_stun_steps=[
+                s if s is not None else getattr(args, 'stun_steps', 0)
+                for s in [getattr(args, 'robot_0_stun_steps', None),
+                          getattr(args, 'robot_1_stun_steps', None)][:self.num_robots]
+            ] if any(s is not None for s in [getattr(args, 'robot_0_stun_steps', None),
+                                              getattr(args, 'robot_1_stun_steps', None)][:self.num_robots]) else None,
         )
 
         # Initialize agents (only for the robots that exist)
@@ -1021,6 +1035,12 @@ def main():
                         help="充電範圍：0=只有站在充電座上，1=3×3（預設）")
     parser.add_argument("--exclusive-charging", action="store_true", default=False,
                         help="充電座獨佔模式：有其他 robot 在 3x3 範圍內時充電無效")
+    parser.add_argument("--docking-steps", type=int, default=0)
+    parser.add_argument("--robot-0-docking-steps", type=int, default=None)
+    parser.add_argument("--robot-1-docking-steps", type=int, default=None)
+    parser.add_argument("--stun-steps", type=int, default=0)
+    parser.add_argument("--robot-0-stun-steps", type=int, default=None)
+    parser.add_argument("--robot-1-stun-steps", type=int, default=None)
     parser.add_argument("--scripted-robots", type=str, default="",
                         help='Comma-separated robot IDs to fix as STAY during eval, e.g. "1" or "1,2"')
     parser.add_argument("--random-robots", type=str, default="",
