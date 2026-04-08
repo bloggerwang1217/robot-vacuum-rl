@@ -56,6 +56,7 @@ analysis_output/
 
 # Logs and temporary files
 logs/
+*.log
 *.backup
 profiler_output.txt
 

@@ -173,6 +173,9 @@ def eval_checkpoint(args, ckpt_ep, env):
     total_offensive = 0   # hits where r0 not on charger after hit
     total_hits = 0
     r1_kills = 0
+    n_episodes = 0
+    ep_has_any_hit = 0          # episodes with >=1 hit (any kind)
+    ep_has_hunt_hit = 0         # episodes with >=1 pure hunt hit
 
     charger_pos = parse_charger_positions(args.charger_positions)
     charger_yx = set((y, x) for (y, x) in charger_pos)
@@ -182,6 +185,9 @@ def eval_checkpoint(args, ckpt_ep, env):
         seed = ep * 37 + 1000
         np.random.seed(seed)
         random.seed(seed)
+        n_episodes += 1
+        ep_any_hit = False
+        ep_hunt_hit = False
 
         for _ in range(args.max_steps):
             if not env.alive[0].any():
@@ -229,11 +235,19 @@ def eval_checkpoint(args, ckpt_ep, env):
                         r1_e_after = float(env.energy[0, 1])
                         if r1_e_after < r1_e_before - 1.0:
                             hits_this_step += 1
-                            # Offensive: r0 not on charger after this hit
+                            ep_any_hit = True
                             r0y = int(env.pos[0, 0, 0])
                             r0x = int(env.pos[0, 0, 1])
-                            if (r0y, r0x) not in charger_yx:
+                            r1y = int(env.pos[0, 1, 0])
+                            r1x = int(env.pos[0, 1, 1])
+                            r0_on_charger = (r0y, r0x) in charger_yx
+                            r1_on_charger = (r1y, r1x) in charger_yx
+                            # Offensive: r0 not on charger after hit
+                            if not r0_on_charger:
                                 offensive_this_step += 1
+                            # Pure hunt: both r0 and r1 not on charger after hit
+                            if not r0_on_charger and not r1_on_charger:
+                                ep_hunt_hit = True
 
                 if robot_id == 0:
                     if hits_this_step >= 1:
@@ -251,18 +265,23 @@ def eval_checkpoint(args, ckpt_ep, env):
 
         if not env.alive[0, 1]:
             r1_kills += 1
+        if ep_any_hit:
+            ep_has_any_hit += 1
+        if ep_hunt_hit:
+            ep_has_hunt_hit += 1
 
     hit_total = total_double + total_single
     return {
-        "attack_rate": total_attack_steps / max(total_steps, 1),
-        "double_rate": total_double / max(hit_total, 1),
-        "single_rate": total_single / max(hit_total, 1),
+        "attack_rate":    ep_has_any_hit  / max(n_episodes, 1),  # episodes with >=1 hit / total ep
+        "hunt_rate":      ep_has_hunt_hit / max(n_episodes, 1),  # episodes with pure hunt hit / total ep
+        "double_rate":    total_double    / max(hit_total, 1),
+        "single_rate":    total_single    / max(hit_total, 1),
         "offensive_rate": total_offensive / max(total_hits, 1),
-        "kill_rate": r1_kills / max(args.episodes_per_ckpt, 1),
+        "kill_rate":      r1_kills        / max(n_episodes, 1),
     }
 
 
-def plot_and_save(model_dir, episodes, attack_rates, double_rates, single_rates, offensive_rates, output_dir=None):
+def plot_and_save(model_dir, episodes, attack_rates, hunt_rates, double_rates, single_rates, offensive_rates, output_dir=None):
     x = np.array(episodes) / 1e6
     title_name = os.path.basename(os.path.normpath(model_dir))
     out_dir = output_dir or model_dir
@@ -270,12 +289,13 @@ def plot_and_save(model_dir, episodes, attack_rates, double_rates, single_rates,
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
 
     ax1 = axes[0]
-    ax1.plot(x, [r * 100 for r in attack_rates], "b-o", markersize=4, linewidth=1.5, label="Attack rate")
-    ax1.set_ylabel("Attack Rate (%)\n(steps with >=1 hit / total steps)")
+    ax1.plot(x, [r * 100 for r in attack_rates], "b-o", markersize=4, linewidth=1.5, label="Any hit episode rate")
+    ax1.plot(x, [r * 100 for r in hunt_rates],   "r-s", markersize=4, linewidth=1.5, label="Pure hunt episode rate")
+    ax1.set_ylabel("Episode Rate (%)\n(episodes with hit / total episodes)")
     ax1.set_title(f"{title_name}: Attack Pattern Evolution During Training", fontsize=14)
     ax1.legend(loc="upper left")
     ax1.grid(True, alpha=0.3)
-    ax1.set_ylim(bottom=0)
+    ax1.set_ylim(0, 100)
 
     ax2 = axes[1]
     ax2.plot(x, [r * 100 for r in offensive_rates], "g-^", markersize=4, linewidth=1.5, label="Offensive hit rate")
@@ -300,11 +320,11 @@ def plot_and_save(model_dir, episodes, attack_rates, double_rates, single_rates,
     plt.savefig(out_png, dpi=150, bbox_inches="tight")
 
     with open(out_csv, "w", encoding="utf-8") as f:
-        f.write("episode,attack_rate,offensive_rate,double_hit_pct,hit_retreat_pct\n")
+        f.write("episode,any_hit_ep_rate,hunt_ep_rate,offensive_rate,double_hit_pct,hit_retreat_pct\n")
         for i in range(len(episodes)):
             f.write(
-                f"{episodes[i]},{attack_rates[i]:.6f},{offensive_rates[i]:.6f},"
-                f"{double_rates[i]:.6f},{single_rates[i]:.6f}\n"
+                f"{episodes[i]},{attack_rates[i]:.6f},{hunt_rates[i]:.6f},"
+                f"{offensive_rates[i]:.6f},{double_rates[i]:.6f},{single_rates[i]:.6f}\n"
             )
 
     print(f"Plot saved: {out_png}")
@@ -325,6 +345,7 @@ def main():
 
     episodes = []
     attack_rates = []
+    hunt_rates = []
     double_rates = []
     single_rates = []
     offensive_rates = []
@@ -333,15 +354,17 @@ def main():
         s = eval_checkpoint(args, ep, env)
         episodes.append(ep)
         attack_rates.append(s["attack_rate"])
+        hunt_rates.append(s["hunt_rate"])
         double_rates.append(s["double_rate"])
         single_rates.append(s["single_rate"])
         offensive_rates.append(s["offensive_rate"])
         print(
-            f"[{i:02d}/{len(sampled)}] ep={ep:>8d} | atk_rate={s['attack_rate']:.3f} | "
-            f"offensive={s['offensive_rate']:.1%} | double={s['double_rate']:.1%} | retreat={s['single_rate']:.1%}"
+            f"[{i:02d}/{len(sampled)}] ep={ep:>8d} | any_hit={s['attack_rate']:.3f} | "
+            f"hunt={s['hunt_rate']:.3f} | offensive={s['offensive_rate']:.1%} | "
+            f"double={s['double_rate']:.1%} | retreat={s['single_rate']:.1%}"
         )
 
-    plot_and_save(args.model_dir, episodes, attack_rates, double_rates, single_rates, offensive_rates, output_dir=args.output_dir)
+    plot_and_save(args.model_dir, episodes, attack_rates, hunt_rates, double_rates, single_rates, offensive_rates, output_dir=args.output_dir)
 
 
 if __name__ == "__main__":

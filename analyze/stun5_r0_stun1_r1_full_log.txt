@@ -1,0 +1,39 @@
+Found 344 checkpoints. Evaluating 35 points.
+Range: 210000 -> 3640000
+[01/35] ep=  210000 | atk_rate=0.010 | double=1.2% | retreat=98.8% | kill=0.0%
+[02/35] ep=  310000 | atk_rate=0.110 | double=0.3% | retreat=99.7% | kill=0.0%
+[03/35] ep=  410000 | atk_rate=0.055 | double=0.1% | retreat=99.9% | kill=0.0%
+[04/35] ep=  510000 | atk_rate=0.059 | double=0.5% | retreat=99.5% | kill=0.0%
+[05/35] ep=  610000 | atk_rate=0.040 | double=0.7% | retreat=99.3% | kill=0.0%
+[06/35] ep=  710000 | atk_rate=0.038 | double=0.5% | retreat=99.5% | kill=0.0%
+[07/35] ep=  820000 | atk_rate=0.011 | double=20.0% | retreat=80.0% | kill=0.0%
+[08/35] ep=  920000 | atk_rate=0.046 | double=1.8% | retreat=98.2% | kill=0.0%
+[09/35] ep= 1020000 | atk_rate=0.015 | double=17.8% | retreat=82.2% | kill=0.0%
+[10/35] ep= 1120000 | atk_rate=0.033 | double=1.0% | retreat=99.0% | kill=0.0%
+[11/35] ep= 1220000 | atk_rate=0.095 | double=0.3% | retreat=99.7% | kill=0.0%
+[12/35] ep= 1320000 | atk_rate=0.133 | double=4.0% | retreat=96.0% | kill=0.0%
+[13/35] ep= 1420000 | atk_rate=0.111 | double=16.9% | retreat=83.1% | kill=0.0%
+[14/35] ep= 1520000 | atk_rate=0.036 | double=1.0% | retreat=99.0% | kill=0.0%
+[15/35] ep= 1620000 | atk_rate=0.015 | double=13.2% | retreat=86.8% | kill=0.0%
+[16/35] ep= 1720000 | atk_rate=0.012 | double=13.9% | retreat=86.1% | kill=0.0%
+[17/35] ep= 1820000 | atk_rate=0.012 | double=7.8% | retreat=92.2% | kill=0.0%
+[18/35] ep= 1930000 | atk_rate=0.016 | double=12.4% | retreat=87.6% | kill=0.0%
+[19/35] ep= 2030000 | atk_rate=0.010 | double=61.2% | retreat=38.8% | kill=0.0%
+[20/35] ep= 2130000 | atk_rate=0.096 | double=1.2% | retreat=98.8% | kill=0.0%
+[21/35] ep= 2230000 | atk_rate=0.092 | double=4.0% | retreat=96.0% | kill=0.0%
+[22/35] ep= 2330000 | atk_rate=0.007 | double=33.1% | retreat=66.9% | kill=0.0%
+[23/35] ep= 2430000 | atk_rate=0.009 | double=82.2% | retreat=17.8% | kill=0.0%
+[24/35] ep= 2530000 | atk_rate=0.009 | double=72.6% | retreat=27.4% | kill=0.0%
+[25/35] ep= 2630000 | atk_rate=0.009 | double=79.9% | retreat=20.1% | kill=0.0%
+[26/35] ep= 2730000 | atk_rate=0.009 | double=81.0% | retreat=19.0% | kill=0.0%
+[27/35] ep= 2830000 | atk_rate=0.009 | double=64.9% | retreat=35.1% | kill=0.0%
+[28/35] ep= 2930000 | atk_rate=0.009 | double=63.2% | retreat=36.8% | kill=0.0%
+[29/35] ep= 3030000 | atk_rate=0.009 | double=48.9% | retreat=51.1% | kill=0.0%
+[30/35] ep= 3140000 | atk_rate=0.009 | double=69.1% | retreat=30.9% | kill=0.0%
+[31/35] ep= 3240000 | atk_rate=0.009 | double=51.4% | retreat=48.6% | kill=0.0%
+[32/35] ep= 3340000 | atk_rate=0.009 | double=64.9% | retreat=35.1% | kill=0.0%
+[33/35] ep= 3440000 | atk_rate=0.009 | double=69.6% | retreat=30.4% | kill=0.0%
+[34/35] ep= 3540000 | atk_rate=0.007 | double=61.1% | retreat=38.9% | kill=0.0%
+[35/35] ep= 3640000 | atk_rate=0.009 | double=57.3% | retreat=42.7% | kill=0.0%
+Plot saved: ./analyze/stun5_r0_stun1_r1_full/attack_evolution.png
+CSV saved: ./analyze/stun5_r0_stun1_r1_full/attack_evolution.csv

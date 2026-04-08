@@ -78,10 +78,15 @@ class SharedBufferDQNAgent:
         else:
             self.epsilon = args.epsilon
 
-        # Shape params for exp_tail / sigmoid schedules
-        self.exp_tail_k = getattr(args, 'exp_tail_k', 15.0)
-        self.sigmoid_s  = getattr(args, 'sigmoid_s',  14.0)
-        self.sigmoid_c  = getattr(args, 'sigmoid_c',  0.45)
+        # Shape params for exp_tail / sigmoid schedules (per-robot overrides global)
+        if robot_idx is not None:
+            self.exp_tail_k = getattr(args, f'robot_{robot_idx}_exp_tail_k', None) or getattr(args, 'exp_tail_k', 15.0)
+            self.sigmoid_s  = getattr(args, f'robot_{robot_idx}_sigmoid_s',  None) or getattr(args, 'sigmoid_s',  14.0)
+            self.sigmoid_c  = getattr(args, f'robot_{robot_idx}_sigmoid_c',  None) or getattr(args, 'sigmoid_c',  0.45)
+        else:
+            self.exp_tail_k = getattr(args, 'exp_tail_k', 15.0)
+            self.sigmoid_s  = getattr(args, 'sigmoid_s',  14.0)
+            self.sigmoid_c  = getattr(args, 'sigmoid_c',  0.45)
 
         # Eval epsilon
         self.eval_epsilon = getattr(args, 'eval_epsilon', 0.0)
@@ -2151,6 +2156,12 @@ def main():
         parser.add_argument(f"--robot-{_ri}-epsilon-schedule", type=str,   default=None,
                             choices=["linear", "exponential", "exp_tail", "sigmoid"],
                             help=f"robot_{_ri} epsilon schedule (overrides --epsilon-schedule)")
+        parser.add_argument(f"--robot-{_ri}-exp-tail-k",  type=float, default=None,
+                            help=f"robot_{_ri} exp_tail k (overrides --exp-tail-k)")
+        parser.add_argument(f"--robot-{_ri}-sigmoid-s",   type=float, default=None,
+                            help=f"robot_{_ri} sigmoid steepness s (overrides --sigmoid-s)")
+        parser.add_argument(f"--robot-{_ri}-sigmoid-c",   type=float, default=None,
+                            help=f"robot_{_ri} sigmoid midpoint c (overrides --sigmoid-c)")
 
     parser.add_argument("--memory-size", type=int, default=100000, help="Replay buffer size")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")

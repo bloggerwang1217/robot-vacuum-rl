@@ -44,6 +44,11 @@ def parse_args():
     p.add_argument("--max-steps", type=int, default=500)
     p.add_argument("--epsilon", type=float, default=0.01, help="Eval epsilon (default 0.01)")
 
+    # Network architecture
+    p.add_argument("--dueling", action="store_true", default=False)
+    p.add_argument("--noisy", action="store_true", default=False)
+    p.add_argument("--c51", action="store_true", default=False)
+
     # r0 / r1 policy
     p.add_argument("--r0-policy", choices=["model", "random"],
                    default="model",
@@ -120,8 +125,8 @@ def make_env(args):
     })
 
 
-def load_net(path, obs_dim):
-    net = build_network(num_actions=5, input_dim=obs_dim)
+def load_net(path, obs_dim, dueling=False, noisy=False, c51=False):
+    net = build_network(num_actions=5, input_dim=obs_dim, dueling=dueling, noisy=noisy, c51=c51)
     net.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
     net.eval()
     return net
@@ -180,7 +185,7 @@ def main():
     r0_net = None
     if args.r0_policy == "model":
         r0_path = os.path.join(args.model_dir, "robot_0.pt")
-        r0_net = load_net(r0_path, obs_dim)
+        r0_net = load_net(r0_path, obs_dim, args.dueling, args.noisy, args.c51)
         print(f"Loaded r0: {r0_path}")
     else:
         print("r0: random policy")
@@ -189,7 +194,7 @@ def main():
     r1_net = None
     if args.r1_policy == "model":
         r1_path = os.path.join(args.model_dir, "robot_1.pt")
-        r1_net = load_net(r1_path, obs_dim)
+        r1_net = load_net(r1_path, obs_dim, args.dueling, args.noisy, args.c51)
         print(f"Loaded r1: {r1_path}")
 
     # Build config block (same structure as gen_stun4_replay.py)
