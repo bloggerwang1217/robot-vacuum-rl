@@ -711,6 +711,8 @@ class VectorizedMultiAgentTrainer:
         all_docking = [
             getattr(args, 'robot_0_docking_steps', None),
             getattr(args, 'robot_1_docking_steps', None),
+            getattr(args, 'robot_2_docking_steps', None),
+            getattr(args, 'robot_3_docking_steps', None),
         ]
         if any(d is not None for d in all_docking[:self.num_robots]):
             robot_docking_steps = [
@@ -725,6 +727,8 @@ class VectorizedMultiAgentTrainer:
         all_stun = [
             getattr(args, 'robot_0_stun_steps', None),
             getattr(args, 'robot_1_stun_steps', None),
+            getattr(args, 'robot_2_stun_steps', None),
+            getattr(args, 'robot_3_stun_steps', None),
         ]
         if any(s is not None for s in all_stun[:self.num_robots]):
             robot_stun_steps = [
@@ -734,6 +738,17 @@ class VectorizedMultiAgentTrainer:
             print(f"Per-robot stun steps: {robot_stun_steps}")
         else:
             robot_stun_steps = None
+
+        # Parse alliance groups
+        _alliance_groups = parse_alliance_groups(
+            getattr(args, 'alliance_groups', None) or '',
+            self.num_robots,
+        )
+        self._alliance_groups = _alliance_groups
+        _energy_sharing_events = [
+            e.strip() for e in getattr(args, 'energy_sharing_events', 'charge,collision').split(',')
+            if e.strip()
+        ]
 
         env_kwargs = {
             'n': args.env_n,
@@ -776,6 +791,12 @@ class VectorizedMultiAgentTrainer:
             'robot_docking_steps': robot_docking_steps,
             'stun_steps': args.stun_steps,
             'robot_stun_steps': robot_stun_steps,
+            # Alliance energy-sharing (optional, defaults to disabled)
+            'alliance_groups': _alliance_groups,
+            'energy_sharing_mode': getattr(args, 'energy_sharing_mode', 'none'),
+            'energy_sharing_events': _energy_sharing_events,
+            'energy_sharing_self_weight': getattr(args, 'energy_sharing_self_weight', 2.0 / 3.0),
+            'energy_sharing_ally_weight': getattr(args, 'energy_sharing_ally_weight', 1.0 / 3.0),
         }
 
         # Create vectorized environment
@@ -1563,8 +1584,15 @@ class VectorizedMultiAgentTrainer:
                         env_terminations[:, robot_id] |= terminated
 
                         # --- Pursuit metrics: off-charger hit tracking ---
+                        # 只計算「對非盟友的攻擊」：排除同盟友好碰撞，避免能量平均碰撞污染數字
                         if self.n_agents >= 2 and hasattr(self.env, 'charger_positions'):
-                            hits_given = col_vec.sum(axis=1)  # (N,) total hits this robot dealt
+                            hostile_col_vec = col_vec.copy()
+                            if hasattr(self.env, '_allied_pairs'):
+                                for j in range(self.n_agents):
+                                    pair = (min(robot_id, j), max(robot_id, j))
+                                    if pair in self.env._allied_pairs:
+                                        hostile_col_vec[:, j] = 0  # 排除友好碰撞
+                            hits_given = hostile_col_vec.sum(axis=1)  # (N,) 對敵人的攻擊次數
                             has_hit = hits_given > 0
                             if has_hit.any():
                                 cpos = self.env.charger_positions[0]  # (y, x)
@@ -1739,8 +1767,34 @@ class VectorizedMultiAgentTrainer:
                     pursuit_str = f" hunt:{off_h}/{off_h+on_h}{okill}" if (off_h + on_h) > 0 else ""
                     bas = self._episode_both_alive_steps[env_idx]
                     pr_str = f" pr:{self._episode_approach_steps[env_idx]/bas:.2f}" if bas > 0 else ""
+                    # Alliance hit stats: show rA->rB hits on enemies + friendly collisions
+                    alliance_str = ""
+                    if self._alliance_groups:
+                        # Collect all allied robot IDs
+                        allied_ids = set()
+                        for grp in self._alliance_groups:
+                            allied_ids |= grp
+                        # Enemy IDs = all robots not in any alliance group
+                        enemy_ids = [r for r in range(self.n_agents) if r not in allied_ids]
+                        parts = []
+                        if enemy_ids:
+                            for attacker in sorted(allied_ids):
+                                for victim in enemy_ids:
+                                    hits = int(self._episode_collisions_matrix[env_idx, attacker, victim])
+                                    parts.append(f"r{attacker}→r{victim}:{hits}")
+                        # Friendly collisions: sum both directions for each allied pair
+                        for grp in self._alliance_groups:
+                            grp_list = sorted(grp)
+                            for gi in range(len(grp_list)):
+                                for gj in range(gi + 1, len(grp_list)):
+                                    ri, rj = grp_list[gi], grp_list[gj]
+                                    fc = (int(self._episode_collisions_matrix[env_idx, ri, rj])
+                                          + int(self._episode_collisions_matrix[env_idx, rj, ri]))
+                                    parts.append(f"r{ri}↔r{rj}:{fc}")
+                        if parts:
+                            alliance_str = " | " + " ".join(parts)
                     print(f"[Episode {self.total_episodes}] Steps:{steps} | "
-                          f"{rewards_str} | Collisions({collisions_str}) | {death_str}{mono_str}{pursuit_str}{pr_str} | ε:{current_epsilon:.3f}")
+                          f"{rewards_str} | Collisions({collisions_str}) | {death_str}{mono_str}{pursuit_str}{pr_str}{alliance_str} | ε:{current_epsilon:.3f}")
 
                     # 計算所有 buffer 的總大小
                     total_buffer_size = sum(len(m) for m in self.memories.values())
@@ -2028,6 +2082,33 @@ class VectorizedMultiAgentTrainer:
         print(f"Models saved to: {save_path}")
 
 
+def parse_alliance_groups(s: str, num_robots: int):
+    """
+    把 "0,1" 解析成 [{0, 1}]。
+    多個 alliance group 用 ";" 分隔，例如 "0,1;2,3" → [{0, 1}, {2, 3}]。
+    非法格式印 warning 並回傳 None（不 crash）。
+    """
+    if not s:
+        return None
+    try:
+        groups = []
+        for group_str in s.split(';'):
+            ids = set(int(x.strip()) for x in group_str.split(',') if x.strip())
+            if not ids:
+                continue
+            for rid in ids:
+                if rid < 0 or rid >= num_robots:
+                    print(f"[WARNING] alliance-groups: robot id {rid} out of range (num_robots={num_robots}), ignoring group")
+                    ids = None
+                    break
+            if ids:
+                groups.append(ids)
+        return groups if groups else None
+    except Exception as e:
+        print(f"[WARNING] Failed to parse --alliance-groups '{s}': {e}. Alliance sharing disabled.")
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Vectorized DQN Training for Multi-Robot Environment")
 
@@ -2082,12 +2163,20 @@ def main():
                         help="Robot 0 專用 docking steps（覆蓋 --docking-steps）")
     parser.add_argument("--robot-1-docking-steps", type=int, default=None,
                         help="Robot 1 專用 docking steps（覆蓋 --docking-steps）")
+    parser.add_argument("--robot-2-docking-steps", type=int, default=None,
+                        help="Robot 2 專用 docking steps（覆蓋 --docking-steps）")
+    parser.add_argument("--robot-3-docking-steps", type=int, default=None,
+                        help="Robot 3 專用 docking steps（覆蓋 --docking-steps）")
     parser.add_argument("--stun-steps", type=int, default=0,
                         help="被撞後暈眩步數：robot 被碰撞後強制 STAY N 步（0=無暈眩）")
     parser.add_argument("--robot-0-stun-steps", type=int, default=None,
                         help="Robot 0 專用暈眩步數（覆蓋 --stun-steps）")
     parser.add_argument("--robot-1-stun-steps", type=int, default=None,
                         help="Robot 1 專用暈眩步數（覆蓋 --stun-steps）")
+    parser.add_argument("--robot-2-stun-steps", type=int, default=None,
+                        help="Robot 2 專用暈眩步數（覆蓋 --stun-steps）")
+    parser.add_argument("--robot-3-stun-steps", type=int, default=None,
+                        help="Robot 3 專用暈眩步數（覆蓋 --stun-steps）")
     parser.add_argument("--shuffle-step-order", action="store_true", default=False,
                         help="每步隨機化 robot 行動順序（消除 sequential stepping 的先後手優勢）")
     parser.add_argument("--charger-range", type=int, default=1,
@@ -2225,6 +2314,19 @@ def main():
     parser.add_argument("--eval-steps", type=int, default=1000, help="Max steps for evaluation")
     parser.add_argument("--plot-evolution-after-training", action=argparse.BooleanOptionalAction, default=True,
                         help="Auto-run plot_attack_evolution.py (greedy, model r1) after training completes (use --no-plot-evolution-after-training to disable)")
+
+    # Alliance energy-sharing parameters (all optional, default = disabled)
+    parser.add_argument("--alliance-groups", type=str, default=None,
+                        help="Alliance groups as comma-separated robot IDs, e.g. '0,1' or '0,1;2,3'")
+    parser.add_argument("--energy-sharing-mode", type=str, default="none",
+                        choices=["none", "event_only"],
+                        help="Energy sharing mode: none (default) or event_only")
+    parser.add_argument("--energy-sharing-events", type=str, default="charge,collision",
+                        help="Comma-separated list of events to share: charge, collision, move, decay, boundary")
+    parser.add_argument("--energy-sharing-self-weight", type=float, default=2.0 / 3.0,
+                        help="Weight for own energy events (default 2/3)")
+    parser.add_argument("--energy-sharing-ally-weight", type=float, default=1.0 / 3.0,
+                        help="Weight per ally for shared energy events (default 1/3)")
 
     args = parser.parse_args()
 

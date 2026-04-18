@@ -180,6 +180,12 @@ class VectorizedRobotVacuumEnv:
             max_steps_reached, truncations = env.advance_step()
             done_mask[env_idx] = max_steps_reached
 
+            # If env has corrected_rewards (from alliance energy sharing), override rewards buffer
+            if hasattr(env, '_corrected_rewards') and env._corrected_rewards:
+                for robot_id, corrected_r in env._corrected_rewards.items():
+                    if isinstance(robot_id, int) and 0 <= robot_id < self.n_agents:
+                        self._rewards_buffer[env_idx, robot_id] = corrected_r
+
             alive_count = sum(1 for agent_id in self.agent_ids
                             if not self._terms_buffer[env_idx, self.agent_ids.index(agent_id)])
             should_end = alive_count == 0 or max_steps_reached

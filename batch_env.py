@@ -76,6 +76,19 @@ class BatchRobotVacuumEnv:
             self.stun_steps = np.full(R, default_stun, dtype=np.int32)  # (R,)
         self.stun_enabled = np.any(self.stun_steps > 0)
 
+        # ── Alliance config ────────────────────────────────────────────────
+        raw_groups = env_kwargs.get('alliance_groups', None)
+        self._alliance_groups = raw_groups if raw_groups else []
+        # Legacy charge-sharing fields kept for backward-compat (no longer applied)
+        self._energy_sharing_mode = env_kwargs.get('energy_sharing_mode', 'none')
+        # Precompute allied pairs: used for no-friendly-fire + energy-averaging
+        self._allied_pairs: set = set()
+        for group in self._alliance_groups:
+            ids = list(group)
+            for _i in range(len(ids)):
+                for _j in range(_i + 1, len(ids)):
+                    self._allied_pairs.add((min(ids[_i], ids[_j]), max(ids[_i], ids[_j])))
+
         # ── Per-robot attack power (damage dealt when this robot collides) ─
         attack_powers = env_kwargs.get('robot_attack_powers', None)
         if attack_powers is not None:
@@ -221,11 +234,13 @@ class BatchRobotVacuumEnv:
         N, n, R = self.N, self.n, self.R
         rid = robot_id
 
-        # ── Stun: force STAY if stunned (decrement in advance_step) ──────
+        # ── Stun: force STAY if stunned, decrement counter immediately ───
+        # stun_steps=N 精確等於 N 次輪到該 robot 時不能動
         if self.stun_enabled:
             stunned = self.stun_counter[:, rid] > 0
             actions = actions.copy()
             actions[stunned] = _STAY
+            self.stun_counter[stunned, rid] -= 1
 
         # ── Reset per-step tracking ────────────────────────────────────────
         # NOTE: prev_energy and died_this_step are NOT reset here.
@@ -297,31 +312,46 @@ class BatchRobotVacuumEnv:
             can_push    = hit_j & kb_inbounds & ~kb_blocked
             stationary  = hit_j & ~can_push
 
+            # Check if rid and j are allied (no friendly fire)
+            _allied = (min(rid, j), max(rid, j)) in self._allied_pairs
+
             # knockback_success: attacker moves in, victim pushed out
             self.pos[can_push, rid, 0] = py[can_push]
             self.pos[can_push, rid, 1] = px[can_push]
             self.pos[can_push, j,   0] = kby[can_push]
             self.pos[can_push, j,   1] = kbx[can_push]
-            self.energy[can_push, j]  -= self.attack_powers[rid]
+            if not _allied:
+                self.energy[can_push, j]  -= self.attack_powers[rid]
             self.active_collisions_with[can_push, rid, j] += 1
             # Knockback resets victim's docking counter (pushed off charger)
             if self.docking_enabled:
                 self.docking_counter[can_push, j] = 0
-            # Stun victim on knockback
-            if self.stun_enabled:
+            # Stun victim on knockback (not for allied pairs)
+            if self.stun_enabled and not _allied:
                 self.stun_counter[can_push, j] = self.stun_steps[j]
                 self.stun_just_set[can_push, j] = True
 
             # stationary_blocked: attacker stays, victim takes damage
-            self.energy[stationary, j] -= self.attack_powers[rid]
+            if not _allied:
+                self.energy[stationary, j] -= self.attack_powers[rid]
             self.active_collisions_with[stationary, rid, j] += 1
             # Reset victim's docking counter on stationary hit too
             if self.docking_enabled:
                 self.docking_counter[stationary, j] = 0
-            # Stun victim on stationary hit too
-            if self.stun_enabled:
+            # Stun victim on stationary hit too (not for allied pairs)
+            if self.stun_enabled and not _allied:
                 self.stun_counter[stationary, j] = self.stun_steps[j]
                 self.stun_just_set[stationary, j] = True
+
+            # Friendly collision: average energy between the two allies.
+            # Apply j's energy cap immediately so step_single(j) doesn't re-cap it.
+            # rid's cap is applied as usual at the end of this step_single call.
+            if _allied and np.any(hit_j):
+                avg_e = (self.energy[hit_j, rid] + self.energy[hit_j, j]) / 2.0
+                cap_j = float(self.energy_cap if self.energy_cap is not None
+                              else self.init_energies[j])
+                self.energy[hit_j, rid] = avg_e
+                self.energy[hit_j, j] = np.minimum(avg_e, cap_j)
 
         # ── Normal move (no collision) ─────────────────────────────────────
         free_move = can_move & ~is_any_collision
@@ -468,15 +498,7 @@ class BatchRobotVacuumEnv:
         """
         self.steps += 1
 
-        # ── Stun: decrement counters once per game step ────────────────
-        #    Skip decrement for stuns set THIS step (prevent off-by-one)
         if self.stun_enabled:
-            can_decrement = ~self.stun_just_set
-            self.stun_counter = np.where(
-                can_decrement,
-                np.maximum(self.stun_counter - 1, 0),
-                self.stun_counter,
-            )
             self.stun_just_set[:] = False
 
         # Note: passive energy decay is now applied per-robot inside step_single()

@@ -104,6 +104,32 @@ class RobotVacuumEnv:
             self.robot_attack_powers = list(attack_powers)
         else:
             self.robot_attack_powers = [self.e_collision] * self.num_robots
+        # Alliance groups: list of sets, e.g. [{0,1}, {2,3}]
+        # allied_pairs: frozenset pairs of robot IDs that should not damage each other
+        raw_alliance = config.get('alliance_groups', None)
+        self._allied_pairs: set = set()
+        if raw_alliance:
+            for group in raw_alliance:
+                ids = list(group)
+                for i in range(len(ids)):
+                    for j in range(i + 1, len(ids)):
+                        self._allied_pairs.add((min(ids[i], ids[j]), max(ids[i], ids[j])))
+        # Stun config: per-robot stun duration (steps forced to STAY after being hit)
+        stun_default = int(config.get('stun_steps', 0))
+        robot_stun = config.get('robot_stun_steps', None)
+        if robot_stun is not None:
+            self.stun_steps = list(robot_stun)
+        else:
+            self.stun_steps = [stun_default] * self.num_robots
+        self.stun_enabled = any(s > 0 for s in self.stun_steps)
+        # Docking config: consecutive steps on charger before charging begins
+        docking_default = int(config.get('docking_steps', 0))
+        robot_docking = config.get('robot_docking_steps', None)
+        if robot_docking is not None:
+            self.docking_steps = list(robot_docking)
+        else:
+            self.docking_steps = [docking_default] * self.num_robots
+        self.docking_enabled = any(d > 0 for d in self.docking_steps)
         # Thief spawn mode
         self.thief_spawn = config.get('thief_spawn', False)
         # Agent types (needed for heterotype check)
@@ -255,6 +281,9 @@ class RobotVacuumEnv:
                 'collision_events': [],  # 完整碰撞歷史 [(step, attacker_id, collision_type), ...]
                 'dust_collected_this_step': 0.0,  # 本回合收到的灰塵
                 'total_dust_collected': 0.0,      # 累計收到的灰塵
+                'stun_counter': 0,       # 剩餘 stun 步數（>0 時強制 STAY）
+                'stun_just_set': False,  # 本步剛被設 stun，advance_step 不遞減
+                'docking_counter': 0,    # 連續停在充電座的步數（docking gate 用）
             }
             self.robots.append(robot)
 
@@ -280,9 +309,17 @@ class RobotVacuumEnv:
             robot['is_mover_this_step'] = False
             robot['dust_collected_this_step'] = 0.0
 
+        # 0b. 初始化 energy_events（每個 robot 的事件級能量記錄）
+        energy_events = [
+            {'charge': 0.0, 'collision': 0.0, 'move': 0.0, 'decay': 0.0, 'boundary': 0.0}
+            for _ in range(self.num_robots)
+        ]
+
         if all(not r['is_active'] for r in self.robots):
             self.current_step += 1
-            return self.get_global_state(), self.current_step >= self.n_steps
+            state = self.get_global_state()
+            state['energy_events'] = energy_events
+            return state, self.current_step >= self.n_steps
 
         # 1. 區分移動和停留的機器人，並計算預定位置
         moving_robots = {}  # {robot_id: planned_pos}
@@ -298,6 +335,7 @@ class RobotVacuumEnv:
                 # 設定 is_mover_this_step 為 True（主動移動）
                 robot['is_mover_this_step'] = True
                 robot['energy'] -= self.e_move  # 移動額外成本
+                energy_events[i]['move'] -= self.e_move
                 py, px = robot['y'], robot['x']
                 if action == self.ACTION_UP: py -= 1
                 elif action == self.ACTION_DOWN: py += 1
@@ -317,6 +355,9 @@ class RobotVacuumEnv:
         for i in range(len(moving_robot_ids)):
             for j in range(i + 1, len(moving_robot_ids)):
                 r_id1, r_id2 = moving_robot_ids[i], moving_robot_ids[j]
+                # Allied robots pass through each other completely
+                if (min(r_id1, r_id2), max(r_id1, r_id2)) in self._allied_pairs:
+                    continue
                 pos1 = (self.robots[r_id1]['y'], self.robots[r_id1]['x'])
                 pos2 = (self.robots[r_id2]['y'], self.robots[r_id2]['x'])
                 plan1 = moving_robots[r_id1]
@@ -344,6 +385,9 @@ class RobotVacuumEnv:
                         break
 
                 if victim_id is not None:
+                    # Allied robots pass through each other completely
+                    if (min(robot_id, victim_id), max(robot_id, victim_id)) in self._allied_pairs:
+                        continue
                     # 計算推回方向：從 moving robot 的原位置指向 victim
                     mover_y, mover_x = self.robots[robot_id]['y'], self.robots[robot_id]['x']
                     victim_y, victim_x = self.robots[victim_id]['y'], self.robots[victim_id]['x']
@@ -423,6 +467,14 @@ class RobotVacuumEnv:
                         })
 
             elif planned_pos in contested_cells:
+                # Check if ALL other robots contesting this cell are allies — if so, pass through
+                contesters = [oid for oid, opos in moving_robots.items()
+                              if oid != robot_id and opos == planned_pos]
+                if contesters and all(
+                    (min(robot_id, oid), max(robot_id, oid)) in self._allied_pairs
+                    for oid in contesters
+                ):
+                    continue  # allies pass through
                 collision_events[robot_id] = "contested"
                 for other_id, other_pos in moving_robots.items():
                     if robot_id != other_id and planned_pos == other_pos:
@@ -494,10 +546,14 @@ class RobotVacuumEnv:
                         robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
 
                 elif reason in ["swap", "contested"]:
-                    # 互撞：雙方停留，受對方 attack power 傷害
+                    # 互撞：雙方停留，受對方 attack power 傷害（盟友免疫）
                     opponent_id = robot['collided_with_agent_id']
-                    dmg = self.robot_attack_powers[opponent_id] if opponent_id is not None else self.e_collision
-                    robot['energy'] -= dmg
+                    pair = (min(robot_id, opponent_id), max(robot_id, opponent_id)) if opponent_id is not None else None
+                    allied = pair in self._allied_pairs if pair is not None else False
+                    if not allied:
+                        dmg = self.robot_attack_powers[opponent_id] if opponent_id is not None else self.e_collision
+                        robot['energy'] -= dmg
+                        energy_events[robot_id]['collision'] -= dmg
                     robot['active_collision_count'] += 1
                     if robot['collided_with_agent_id'] is not None:
                         robot['active_collisions_with'][robot['collided_with_agent_id']] += 1
@@ -510,6 +566,7 @@ class RobotVacuumEnv:
                 elif reason == "boundary":
                     # 撞牆：停留原位，受高額懲罰（使用 e_boundary）
                     robot['energy'] -= self.e_boundary
+                    energy_events[robot_id]['boundary'] -= self.e_boundary
                     robot['active_collision_count'] += 1
                     # 記錄撞牆事件
                     robot['collision_events'].append({
@@ -531,8 +588,12 @@ class RobotVacuumEnv:
                 new_pos = knockback_targets[robot_id]
                 robot['y'], robot['x'] = new_pos
                 aggressor_id = robot['collided_with_agent_id']
-                dmg = self.robot_attack_powers[aggressor_id] if aggressor_id is not None else self.e_collision
-                robot['energy'] -= dmg
+                pair = (min(robot_id, aggressor_id), max(robot_id, aggressor_id)) if aggressor_id is not None else None
+                allied = pair in self._allied_pairs if pair is not None else False
+                if not allied:
+                    dmg = self.robot_attack_powers[aggressor_id] if aggressor_id is not None else self.e_collision
+                    robot['energy'] -= dmg
+                    energy_events[robot_id]['collision'] -= dmg
                 robot['passive_collision_count'] += 1
                 if aggressor_id is not None:
                     robot['collided_by_counts'][aggressor_id] += 1
@@ -541,8 +602,12 @@ class RobotVacuumEnv:
                 # 如果被撞且沒有被推開（即 stationary_blocked 情況）
                 if robot['collided_with_agent_id'] is not None:
                     aggressor_id = robot['collided_with_agent_id']
-                    dmg = self.robot_attack_powers[aggressor_id] if aggressor_id is not None else self.e_collision
-                    robot['energy'] -= dmg
+                    pair = (min(robot_id, aggressor_id), max(robot_id, aggressor_id))
+                    allied = pair in self._allied_pairs
+                    if not allied:
+                        dmg = self.robot_attack_powers[aggressor_id] if aggressor_id is not None else self.e_collision
+                        robot['energy'] -= dmg
+                        energy_events[robot_id]['collision'] -= dmg
                     robot['passive_collision_count'] += 1
                     robot['collided_by_counts'][aggressor_id] += 1
 
@@ -581,6 +646,7 @@ class RobotVacuumEnv:
                         factor_applied = self.heterotype_charge_factor
                     for robot in robots_in_range:
                         robot['energy'] += charge_per_robot
+                        energy_events[robot['id']]['charge'] += charge_per_robot
                         robot['charge_count'] += 1
                         if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
                             robot['non_home_charge_count'] += 1
@@ -605,6 +671,7 @@ class RobotVacuumEnv:
             # Passive decay
             if self.e_decay > 0:
                 robot['energy'] -= self.e_decay
+                energy_events[robot['id']]['decay'] -= self.e_decay
             robot['energy'] = max(0, robot['energy'])
             if robot['energy'] <= 0:
                 robot['is_active'] = False
@@ -616,15 +683,18 @@ class RobotVacuumEnv:
         # 5. 回合計數
         self.current_step += 1
         done = self.current_step >= self.n_steps
-        return self.get_global_state(), done
+        state = self.get_global_state()
+        state['energy_events'] = energy_events
+        return state, done
 
-    def step_single(self, robot_id: int, action: int) -> Dict[str, Any]:
+    def step_single(self, robot_id: int, action: int, is_last_turn: bool = True) -> Dict[str, Any]:
         """
         執行單個機器人的動作（一個一個動的版本）
 
         Args:
             robot_id: 機器人 ID (0 到 num_robots-1)
             action: 動作 (0-4)
+            is_last_turn: 是否為該 robot 本 step 的最後一個 sub-turn（True 才充電，與 batch_env 一致）
 
         Returns:
             state: 更新後的環境狀態
@@ -636,16 +706,35 @@ class RobotVacuumEnv:
         robot['is_mover_this_step'] = False
         robot['dust_collected_this_step'] = 0.0
 
-        # 1b. Passive energy decay (per-robot, matching batch_env timing)
-        if self.e_decay > 0 and robot['is_active']:
+        # 1b. 初始化 step_single 的 energy_event 記錄（此 robot 本次呼叫）
+        # 使用 _step_single_energy_events dict 在所有 robot 呼叫間累積
+        if not hasattr(self, '_step_single_energy_events'):
+            self._step_single_energy_events = {}
+        self._step_single_energy_events[robot_id] = {
+            'charge': 0.0, 'collision': 0.0, 'move': 0.0, 'decay': 0.0, 'boundary': 0.0
+        }
+        _ev = self._step_single_energy_events[robot_id]
+
+        # 1c. Passive energy decay (per-robot, matching batch_env timing)
+        # Only apply on last sub-turn so multi-speed robots decay once per game step
+        if self.e_decay > 0 and is_last_turn and robot['is_active']:
             robot['energy'] -= self.e_decay
+            _ev['decay'] -= self.e_decay
             robot['energy'] = max(0, robot['energy'])
             if robot['energy'] <= 0:
                 robot['is_active'] = False
 
         # 如果機器人已死亡，直接返回
         if not robot['is_active']:
-            return self.get_global_state()
+            state = self.get_global_state()
+            state['energy_events'] = self._step_single_energy_events
+            return state
+
+        # 1d. Stun: 若仍在 stun 中，強制 STAY 並立即遞減 counter
+        # stun_steps=N 精確等於 N 次輪到該 robot 時不能動
+        if self.stun_enabled and robot['stun_counter'] > 0:
+            action = self.ACTION_STAY
+            robot['stun_counter'] -= 1
 
         # 2. 處理動作
         if action == self.ACTION_STAY:
@@ -655,6 +744,7 @@ class RobotVacuumEnv:
             # 移動動作：設定 is_mover_this_step 為 True
             robot['is_mover_this_step'] = True
             robot['energy'] -= self.e_move  # 移動額外成本
+            _ev['move'] -= self.e_move
 
             # 計算預定位置
             py, px = robot['y'], robot['x']
@@ -674,6 +764,7 @@ class RobotVacuumEnv:
             if not (0 <= px < self.n and 0 <= py < self.n):
                 collision_type = "boundary"
                 robot['energy'] -= self.e_boundary
+                _ev['boundary'] -= self.e_boundary
                 robot['active_collision_count'] += 1
                 robot['collision_events'].append({
                     'step': self.current_step,
@@ -690,6 +781,7 @@ class RobotVacuumEnv:
                             break
 
                 if victim_id is not None:
+                    _is_allied = (min(robot_id, victim_id), max(robot_id, victim_id)) in self._allied_pairs
                     victim = self.robots[victim_id]
 
                     # 嘗試 knockback：計算推回方向
@@ -715,7 +807,22 @@ class RobotVacuumEnv:
                         collision_type = "knockback_success"
                         robot['y'], robot['x'] = py, px
                         victim['y'], victim['x'] = new_victim_y, new_victim_x
-                        victim['energy'] -= self.robot_attack_powers[robot_id]
+                        if not _is_allied:
+                            _dmg_knockback = self.robot_attack_powers[robot_id]
+                            victim['energy'] -= _dmg_knockback
+                            if victim_id not in self._step_single_energy_events:
+                                self._step_single_energy_events[victim_id] = {
+                                    'charge': 0.0, 'collision': 0.0, 'move': 0.0, 'decay': 0.0, 'boundary': 0.0
+                                }
+                            self._step_single_energy_events[victim_id]['collision'] -= _dmg_knockback
+                        else:
+                            # Friendly knockback: average energy between allies.
+                            # Apply victim's cap now so the next step_single(victim) doesn't re-clip.
+                            avg_e = (robot['energy'] + victim['energy']) / 2.0
+                            robot['energy'] = avg_e
+                            victim_cap = (self.energy_cap if self.energy_cap is not None
+                                         else victim['max_energy'])
+                            victim['energy'] = min(avg_e, victim_cap)
                         victim['passive_collision_count'] += 1
                         victim['collided_by_counts'][robot_id] += 1
                         victim['collided_with_agent_id'] = robot_id
@@ -723,6 +830,14 @@ class RobotVacuumEnv:
                         robot['active_collision_count'] += 1
                         robot['active_collisions_with'][victim_id] += 1
                         robot['collided_with_agent_id'] = victim_id
+
+                        # Stun / docking reset（盟友不 stun）
+                        if not _is_allied:
+                            if self.stun_enabled:
+                                victim['stun_counter'] = self.stun_steps[victim_id]
+                                victim['stun_just_set'] = True
+                            if self.docking_enabled:
+                                victim['docking_counter'] = 0
 
                         # 記錄碰撞歷史
                         robot['collision_events'].append({
@@ -738,7 +853,22 @@ class RobotVacuumEnv:
                     else:
                         # stationary_blocked：無路可推，移動者停住
                         collision_type = "stationary_blocked"
-                        victim['energy'] -= self.robot_attack_powers[robot_id]
+                        if not _is_allied:
+                            _dmg_blocked = self.robot_attack_powers[robot_id]
+                            victim['energy'] -= _dmg_blocked
+                            if victim_id not in self._step_single_energy_events:
+                                self._step_single_energy_events[victim_id] = {
+                                    'charge': 0.0, 'collision': 0.0, 'move': 0.0, 'decay': 0.0, 'boundary': 0.0
+                                }
+                            self._step_single_energy_events[victim_id]['collision'] -= _dmg_blocked
+                        else:
+                            # Friendly stationary: average energy between allies.
+                            # Apply victim's cap now so the next step_single(victim) doesn't re-clip.
+                            avg_e = (robot['energy'] + victim['energy']) / 2.0
+                            robot['energy'] = avg_e
+                            victim_cap = (self.energy_cap if self.energy_cap is not None
+                                         else victim['max_energy'])
+                            victim['energy'] = min(avg_e, victim_cap)
                         victim['passive_collision_count'] += 1
                         victim['collided_by_counts'][robot_id] += 1
                         victim['collided_with_agent_id'] = robot_id
@@ -747,27 +877,50 @@ class RobotVacuumEnv:
                         robot['active_collisions_with'][victim_id] += 1
                         robot['collided_with_agent_id'] = victim_id
 
-                        # 記錄碰撞歷史
-                        robot['collision_events'].append({
-                            'step': self.current_step,
-                            'opponent_id': victim_id,
-                            'collision_type': 'stationary_blocked'
-                        })
-                        victim['collision_events'].append({
-                            'step': self.current_step,
-                            'opponent_id': robot_id,
-                            'collision_type': 'stationary_blocked'
-                        })
+                        # Stun / docking reset（盟友不 stun）
+                        if not _is_allied:
+                            if self.stun_enabled:
+                                victim['stun_counter'] = self.stun_steps[victim_id]
+                                victim['stun_just_set'] = True
+                            if self.docking_enabled:
+                                victim['docking_counter'] = 0
+
+                            # 記錄碰撞歷史
+                            robot['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': victim_id,
+                                'collision_type': 'stationary_blocked'
+                            })
+                            victim['collision_events'].append({
+                                'step': self.current_step,
+                                'opponent_id': robot_id,
+                                'collision_type': 'stationary_blocked'
+                            })
                 else:
                     # 沒有碰撞，正常移動
                     robot['y'], robot['x'] = py, px
 
         # 4. 充電：在充電座範圍內就充電（平分給所有範圍內的活躍機器人）
         # exclusive_charging=True 時：只有該充電座範圍內唯一的 robot 才能充電
+        # 只在 is_last_turn=True 時充電，與 batch_env.py 一致（speed>1 時中間 sub-turn 不充電）
         self.charger_log = []  # Step-level heterotype logging
-        if robot['is_active']:
+        if is_last_turn and robot['is_active']:
+            # Docking counter：在充電座上（且未被 stun）才累積；離開或被 stun 則重置
+            on_charger = any(
+                abs(robot['x'] - cx) <= self.charger_range and abs(robot['y'] - cy) <= self.charger_range
+                for cy, cx in self.charger_positions
+            )
+            if self.docking_enabled:
+                if on_charger and robot['stun_counter'] == 0:
+                    robot['docking_counter'] += 1
+                else:
+                    robot['docking_counter'] = 0
+
             for charger_y, charger_x in self.charger_positions:
                 if abs(robot['x'] - charger_x) <= self.charger_range and abs(robot['y'] - charger_y) <= self.charger_range:
+                    # Docking gate：需達到 docking_steps 才能充電
+                    if self.docking_enabled and robot['docking_counter'] < self.docking_steps[robot_id]:
+                        continue
                     robots_in_range = [
                         r for r in self.robots
                         if r['is_active'] and
@@ -796,6 +949,7 @@ class RobotVacuumEnv:
                             charge_amount *= self.heterotype_charge_factor
                             factor_applied = self.heterotype_charge_factor
                         robot['energy'] += charge_amount
+                        _ev['charge'] += charge_amount
                         robot['charge_count'] += 1
                         if robot['home_charger'] is not None and (charger_y, charger_x) != robot['home_charger']:
                             robot['non_home_charge_count'] += 1
@@ -833,7 +987,9 @@ class RobotVacuumEnv:
                 if other['energy'] <= 0:
                     other['is_active'] = False
 
-        return self.get_global_state()
+        state = self.get_global_state()
+        state['energy_events'] = self._step_single_energy_events
+        return state
 
     def advance_step(self) -> bool:
         """
@@ -844,6 +1000,10 @@ class RobotVacuumEnv:
         """
         # Note: passive energy decay is now applied per-robot inside step_single()
         # to match batch_env timing (decay before action, so other robots see post-decay energy).
+
+        if self.stun_enabled:
+            for robot in self.robots:
+                robot['stun_just_set'] = False
 
         self.current_step += 1
         if self.dust_enabled:

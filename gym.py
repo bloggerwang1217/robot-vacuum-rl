@@ -71,11 +71,34 @@ class RobotVacuumGymEnv:
                 'robot_attack_powers': kwargs.get('robot_attack_powers', None),
                 'thief_spawn': kwargs.get('thief_spawn', False),
                 'legacy_obs': kwargs.get('legacy_obs', False),
+                'alliance_groups': kwargs.get('alliance_groups', None),
+                'energy_sharing_mode': kwargs.get('energy_sharing_mode', 'none'),
+                'energy_sharing_events': kwargs.get('energy_sharing_events', ['charge', 'collision']),
+                'energy_sharing_self_weight': kwargs.get('energy_sharing_self_weight', 2.0 / 3.0),
+                'energy_sharing_ally_weight': kwargs.get('energy_sharing_ally_weight', 1.0 / 3.0),
+                'stun_steps': kwargs.get('stun_steps', 0),
+                'robot_stun_steps': kwargs.get('robot_stun_steps', None),
+                'docking_steps': kwargs.get('docking_steps', 0),
+                'robot_docking_steps': kwargs.get('robot_docking_steps', None),
             }
 
         # 創建底層環境
         self.env = RobotVacuumEnv(config)
         self.config = config
+
+        # Alliance energy-sharing 配置（預設完全關閉）
+        self._alliance_groups = config.get('alliance_groups', None)  # list of sets, e.g. [{0, 1}]
+        self._energy_sharing_mode = config.get('energy_sharing_mode', 'none')  # 'none' or 'event_only'
+        self._energy_sharing_events = config.get('energy_sharing_events', ['charge', 'collision'])
+        self._energy_sharing_self_weight = config.get('energy_sharing_self_weight', 2.0 / 3.0)
+        self._energy_sharing_ally_weight = config.get('energy_sharing_ally_weight', 1.0 / 3.0)
+
+        # Buffer for energy_events during step_single calls (evaluation path)
+        self._step_energy_events: Dict[int, Dict[str, float]] = {}
+        # Buffer for corrected rewards after advance_step (evaluation path)
+        self._corrected_rewards: Dict[str, float] = {}
+        # Last step's energy sharing adjustments {robot_id: delta} (only set when alliance active)
+        self._last_sharing_adjustments: Dict[int, float] = {}
 
         # 環境參數
         self.n = config.get('n', 3)
@@ -126,6 +149,71 @@ class RobotVacuumGymEnv:
         # 追蹤上一步的狀態 (用於計算獎勵)
         self.prev_robots = None
 
+    def _apply_energy_sharing(
+        self,
+        energy_events: List[Dict[str, float]],
+        alliance_groups,
+        mode: str,
+        events: List[str],
+        w_self: float,
+        w_ally: float,
+    ) -> Dict[int, float]:
+        """
+        計算 alliance energy sharing 後各 robot 需要的能量調整量。
+
+        Args:
+            energy_events: 每個 robot 的 event-level 能量記錄 (list of dicts, index = robot_id)
+            alliance_groups: list of sets，例如 [{0, 1}]；None 或空 list 時不做共享
+            mode: 'none' 或 'event_only'
+            events: 要共享的事件種類，例如 ['charge', 'collision']
+            w_self: 自己保留的比例（預設 2/3）
+            w_ally: 給每個 ally 的比例（預設 1/3，2人 alliance 時 ally=1）
+
+        Returns:
+            adjustments: {robot_id: delta_energy}，需要加到各 robot 的能量上
+        """
+        adjustments = {i: 0.0 for i in range(self.n_robots)}
+
+        if mode == 'none' or not alliance_groups:
+            return adjustments
+
+        # Get alive status for each robot
+        state = self.env.get_global_state()
+        alive = [r['is_active'] for r in state['robots']]
+
+        if mode == 'event_only':
+            for group in alliance_groups:
+                group_list = sorted(group)
+                if len(group_list) <= 1:
+                    continue
+                for robot_id in group_list:
+                    # Dead robots don't share (they shouldn't have events anyway)
+                    if not alive[robot_id]:
+                        continue
+                    # Count only alive allies for sharing denominator
+                    alive_allies = [a for a in group_list if a != robot_id and alive[a]]
+                    n_alive_allies = len(alive_allies)
+                    if n_alive_allies <= 0:
+                        continue  # no alive allies to share with; keep full amount
+                    # 對每個指定事件，計算共享量
+                    for event_key in events:
+                        if robot_id >= len(energy_events):
+                            continue
+                        ev_val = energy_events[robot_id].get(event_key, 0.0)
+                        if ev_val == 0.0:
+                            continue
+                        # 原本全給自己，現在自己保留 w_self，剩下分給 alive ally
+                        keep = ev_val * w_self
+                        share_total = ev_val - keep  # = ev_val * (1 - w_self)
+                        # 調整自己：from full ev_val to keep
+                        adjustments[robot_id] += keep - ev_val  # negative if sharing out positive events
+                        # 平均分給每個 alive ally
+                        share_per_ally = share_total / n_alive_allies
+                        for ally_id in alive_allies:
+                            adjustments[ally_id] += share_per_ally
+
+        return adjustments
+
     def reset(self, seed=None, options=None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         """
         重置環境
@@ -139,6 +227,10 @@ class RobotVacuumGymEnv:
 
         # 儲存當前狀態
         self.prev_robots = [robot.copy() for robot in state['robots']]
+
+        # 清除 alliance sharing buffer
+        self._step_energy_events = {}
+        self._corrected_rewards = {}
 
         # 生成觀測
         observations = self._get_observations(state)
@@ -351,6 +443,7 @@ class RobotVacuumGymEnv:
                 'total_active_collisions': robot['active_collision_count'],  # 主動碰撞總次數
                 'total_passive_collisions': robot['passive_collision_count'],  # 被碰撞總次數
                 'collided_with_agent_id': collided_with,  # For kill analysis (converted to agent_id string)
+                'stun_remaining': robot.get('stun_counter', 0),  # 剩餘 stun 步數（replay 用）
                 'step': state['current_step']
             }
 
@@ -382,7 +475,7 @@ class RobotVacuumGymEnv:
         agent_id = self.agent_ids[robot_id]
         return observations[agent_id]
 
-    def step_single(self, robot_id: int, action: int) -> Tuple[
+    def step_single(self, robot_id: int, action: int, is_last_turn: bool = True) -> Tuple[
         np.ndarray,     # observation (該 agent)
         float,          # reward (該 agent)
         bool,           # terminated (該 agent)
@@ -395,6 +488,7 @@ class RobotVacuumGymEnv:
         Args:
             robot_id: 機器人 ID (0 到 n_robots-1)
             action: 動作 (0-4)
+            is_last_turn: 是否為該 robot 本 step 的最後一個 sub-turn（True 才充電）
 
         Returns:
             observation: 該 agent 執行動作後的觀測
@@ -409,7 +503,7 @@ class RobotVacuumGymEnv:
         prev_robot = self.prev_robots[robot_id].copy()
 
         # 執行動作
-        state = self.env.step_single(robot_id, action)
+        state = self.env.step_single(robot_id, action, is_last_turn=is_last_turn)
 
         # 更新該 robot 的 prev_robots（用於下次獎勵計算）
         self.prev_robots[robot_id] = state['robots'][robot_id].copy()
@@ -418,7 +512,7 @@ class RobotVacuumGymEnv:
         observations = self._get_observations(state)
         observation = observations[agent_id]
 
-        # 計算該 agent 的獎勵
+        # 計算該 agent 的 reward
         robot = state['robots'][robot_id]
         reward = self._calculate_single_reward(robot, prev_robot, robot_idx=robot_id)
 

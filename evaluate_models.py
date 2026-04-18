@@ -106,8 +106,9 @@ class ModelEvaluator:
             exclusive_charging=args.exclusive_charging,
             charger_range=getattr(args, 'charger_range', 1),
             robot_speeds=robot_speeds,
-            random_start_robots=set(
-                int(x) for x in getattr(args, 'random_start_robots', '').split(',') if x.strip()
+            random_start_robots=(
+                set(range(args.num_robots)) if getattr(args, 'random_start_robots', 'all') == 'all'
+                else set(int(x) for x in getattr(args, 'random_start_robots', '').split(',') if x.strip())
             ),
             robot_start_positions={
                 i: tuple(map(int, pos_str.split(',')))
@@ -132,16 +133,34 @@ class ModelEvaluator:
             robot_docking_steps=[
                 d if d is not None else getattr(args, 'docking_steps', 0)
                 for d in [getattr(args, 'robot_0_docking_steps', None),
-                          getattr(args, 'robot_1_docking_steps', None)][:self.num_robots]
+                          getattr(args, 'robot_1_docking_steps', None),
+                          getattr(args, 'robot_2_docking_steps', None),
+                          getattr(args, 'robot_3_docking_steps', None)][:self.num_robots]
             ] if any(d is not None for d in [getattr(args, 'robot_0_docking_steps', None),
-                                              getattr(args, 'robot_1_docking_steps', None)][:self.num_robots]) else None,
+                                              getattr(args, 'robot_1_docking_steps', None),
+                                              getattr(args, 'robot_2_docking_steps', None),
+                                              getattr(args, 'robot_3_docking_steps', None)][:self.num_robots]) else None,
             stun_steps=getattr(args, 'stun_steps', 0),
             robot_stun_steps=[
                 s if s is not None else getattr(args, 'stun_steps', 0)
                 for s in [getattr(args, 'robot_0_stun_steps', None),
-                          getattr(args, 'robot_1_stun_steps', None)][:self.num_robots]
+                          getattr(args, 'robot_1_stun_steps', None),
+                          getattr(args, 'robot_2_stun_steps', None),
+                          getattr(args, 'robot_3_stun_steps', None)][:self.num_robots]
             ] if any(s is not None for s in [getattr(args, 'robot_0_stun_steps', None),
-                                              getattr(args, 'robot_1_stun_steps', None)][:self.num_robots]) else None,
+                                              getattr(args, 'robot_1_stun_steps', None),
+                                              getattr(args, 'robot_2_stun_steps', None),
+                                              getattr(args, 'robot_3_stun_steps', None)][:self.num_robots]) else None,
+            alliance_groups=self._parse_alliance_groups(
+                getattr(args, 'alliance_groups', None) or '',
+                self.num_robots,
+            ),
+            energy_sharing_mode=getattr(args, 'energy_sharing_mode', 'none'),
+            energy_sharing_events=[
+                e.strip() for e in getattr(args, 'energy_sharing_events', 'charge,collision').split(',') if e.strip()
+            ],
+            energy_sharing_self_weight=getattr(args, 'energy_sharing_self_weight', 2.0 / 3.0),
+            energy_sharing_ally_weight=getattr(args, 'energy_sharing_ally_weight', 1.0 / 3.0),
         )
 
         # Initialize agents (only for the robots that exist)
@@ -284,8 +303,8 @@ class ModelEvaluator:
         print(f"Eval Epsilon: {self.args.eval_epsilon}")
         print(f"{'=' * 60}\n")
 
-        # Reset environment with seed if provided
-        observations, infos = self.env.reset(seed=self.args.seed)
+        # Reset environment without fixed seed so random starts vary each episode
+        observations, infos = self.env.reset()
 
         episode_rewards = {agent_id: 0.0 for agent_id in self.agent_ids}
         episode_infos_history = []
@@ -306,6 +325,9 @@ class ModelEvaluator:
 
         # Dust grid history (每個完整 step 後的灰塵快照)
         episode_dust_history = []
+
+        # Alliance energy sharing adjustments history (empty list when alliance disabled)
+        episode_sharing_history = []
 
         # Main simulation loop
         action_names = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'STAY']
@@ -333,7 +355,8 @@ class ModelEvaluator:
                         f"robot_{i}": {
                             "position": [state_before['robots'][i]['x'], state_before['robots'][i]['y']],
                             "energy": state_before['robots'][i]['energy'],
-                            "is_dead": not state_before['robots'][i]['is_active']
+                            "is_dead": not state_before['robots'][i]['is_active'],
+                            "stun_remaining": state_before['robots'][i].get('stun_counter', 0)
                         }
                         for i in range(self.num_robots)
                     }
@@ -407,7 +430,8 @@ class ModelEvaluator:
                         step_q_values[agent_id] = agent_q_values
 
                     # 3. Execute action
-                    next_obs, reward, terminated, truncated, info = self.env.step_single(robot_id, action)
+                    is_last_turn = (turn == n_turns - 1)
+                    next_obs, reward, terminated, truncated, info = self.env.step_single(robot_id, action, is_last_turn=is_last_turn)
 
                     # 記錄行動後的狀態
                     state_after = self.env.env.get_global_state()
@@ -415,7 +439,8 @@ class ModelEvaluator:
                         f"robot_{i}": {
                             "position": [state_after['robots'][i]['x'], state_after['robots'][i]['y']],
                             "energy": state_after['robots'][i]['energy'],
-                            "is_dead": not state_after['robots'][i]['is_active']
+                            "is_dead": not state_after['robots'][i]['is_active'],
+                            "stun_remaining": state_after['robots'][i].get('stun_counter', 0)
                         }
                         for i in range(self.num_robots)
                     }
@@ -460,6 +485,7 @@ class ModelEvaluator:
             episode_substeps_history.append(step_substeps)
             if self.env.dust_enabled:
                 episode_dust_history.append(state['dust_grid'].copy())
+            episode_sharing_history.append(dict(self.env._last_sharing_adjustments))
 
             # Log EVERY step for complete dynamics tracking
             self.log_step_summary(step_count, episode_rewards, episode_infos_history)
@@ -493,7 +519,7 @@ class ModelEvaluator:
         final_stats = self.log_final_summary(step_count, episode_rewards, episode_infos_history)
 
         # Save replay data for visualization (包含 sub-steps)
-        replay_file = self.save_replay(episode_actions_history, episode_infos_history, episode_q_values_history, episode_substeps_history, episode_dust_history, step_count)
+        replay_file = self.save_replay(episode_actions_history, episode_infos_history, episode_q_values_history, episode_substeps_history, episode_dust_history, episode_sharing_history, step_count)
         print(f"\nReplay data saved to: {replay_file}")
 
         return final_stats
@@ -751,7 +777,7 @@ class ModelEvaluator:
 
     def save_replay(self, episode_actions: List[List[int]], episode_infos: List[Dict],
                    episode_q_values: List[Dict], episode_substeps: List[List[Dict]],
-                   episode_dust: List, total_steps: int) -> str:
+                   episode_dust: List, episode_sharing: List[Dict], total_steps: int) -> str:
         """
         Save episode replay data as JSON for visualization with pygame
 
@@ -804,6 +830,8 @@ class ModelEvaluator:
                 "agent_types": agent_type_map,
                 "heterotype_charge_mode": getattr(self.args, 'heterotype_charge_mode', 'off'),
                 "heterotype_charge_factor": getattr(self.args, 'heterotype_charge_factor', 1.0),
+                "alliance_groups": [sorted(g) for g in self.env._alliance_groups] if self.env._alliance_groups else [],
+                "energy_sharing_mode": self.env._energy_sharing_mode,
                 "parameters": {
                     "e_move": self.args.e_move,
                     "e_collision": self.args.e_collision,
@@ -820,6 +848,7 @@ class ModelEvaluator:
             infos = episode_infos[step_idx]
             q_values = episode_q_values[step_idx]
             substeps = episode_substeps[step_idx]
+            sharing_adj = episode_sharing[step_idx] if episode_sharing else {}
 
             # 灰塵資料（僅在啟用時）
             if self.env.dust_enabled:
@@ -855,6 +884,7 @@ class ModelEvaluator:
                     "position": list(pos),
                     "energy": agent_info.get('energy', 0),
                     "is_dead": agent_info.get('is_dead', False),
+                    "stun_remaining": agent_info.get('stun_remaining', 0),
                 }
 
             # Extract events from this step (collisions, charges, deaths)
@@ -867,11 +897,25 @@ class ModelEvaluator:
 
                 if collision_target is not None:
                     damage = self.args.e_collision
+                    # Check if this is a friendly collision (same alliance, no stun)
+                    victim_info = infos.get(collision_target, {})
+                    victim_stun = victim_info.get('stun_remaining', 0)
+                    attacker_stun = agent_info.get('stun_remaining', 0)
+                    is_friendly = False
+                    if hasattr(self.env, '_alliance_groups') and self.env._alliance_groups:
+                        for grp in self.env._alliance_groups:
+                            robot_ids = [int(a.split('_')[1]) for a in [agent_id, collision_target]]
+                            if robot_ids[0] in grp and robot_ids[1] in grp:
+                                is_friendly = True
+                                break
                     events.append({
                         "type": "collision",
                         "attacker": agent_id,
                         "victim": collision_target,
-                        "damage": damage
+                        "damage": damage,
+                        "friendly": is_friendly,
+                        "victim_stun_after": victim_stun,
+                        "attacker_stun_after": attacker_stun,
                     })
 
             # Check for deaths (death happens when energy <= 0)
@@ -890,6 +934,13 @@ class ModelEvaluator:
 
             step_data["events"] = events
 
+            # Alliance energy sharing adjustments (only present when alliance is active)
+            if sharing_adj:
+                step_data["sharing_adjustments"] = {
+                    f"robot_{robot_id}": delta
+                    for robot_id, delta in sharing_adj.items()
+                }
+
             # Charger log (heterotype experiment)
             charger_log = infos.get('charger_log', None)
             if charger_log:
@@ -907,6 +958,21 @@ class ModelEvaluator:
             json.dump(replay_data, f, indent=2)
 
         return str(replay_file)
+
+    @staticmethod
+    def _parse_alliance_groups(s: str, num_robots: int):
+        """Parse alliance groups string, e.g. '0,1' or '0,1;2,3' → list of sets."""
+        if not s:
+            return None
+        groups = []
+        try:
+            for group_str in s.split(';'):
+                ids = [int(x.strip()) for x in group_str.split(',') if x.strip()]
+                if ids and all(0 <= i < num_robots for i in ids):
+                    groups.append(set(ids))
+        except Exception:
+            return None
+        return groups if groups else None
 
     def _parse_charger_positions(self) -> List[List[int]]:
         """Parse charger positions from args"""
@@ -1038,9 +1104,13 @@ def main():
     parser.add_argument("--docking-steps", type=int, default=0)
     parser.add_argument("--robot-0-docking-steps", type=int, default=None)
     parser.add_argument("--robot-1-docking-steps", type=int, default=None)
+    parser.add_argument("--robot-2-docking-steps", type=int, default=None)
+    parser.add_argument("--robot-3-docking-steps", type=int, default=None)
     parser.add_argument("--stun-steps", type=int, default=0)
     parser.add_argument("--robot-0-stun-steps", type=int, default=None)
     parser.add_argument("--robot-1-stun-steps", type=int, default=None)
+    parser.add_argument("--robot-2-stun-steps", type=int, default=None)
+    parser.add_argument("--robot-3-stun-steps", type=int, default=None)
     parser.add_argument("--scripted-robots", type=str, default="",
                         help='Comma-separated robot IDs to fix as STAY during eval, e.g. "1" or "1,2"')
     parser.add_argument("--random-robots", type=str, default="",
@@ -1051,7 +1121,7 @@ def main():
                         help='Comma-separated robot IDs that use flee heuristic during eval, e.g. "1"')
     parser.add_argument("--seek-charger-robots", type=str, default="",
                         help='Comma-separated robot IDs that walk toward charger during eval, e.g. "1"')
-    parser.add_argument("--random-start-robots", type=str, default="",
+    parser.add_argument("--random-start-robots", type=str, default="all",
                         help='Comma-separated robot IDs to randomize start position each episode, e.g. "0"')
     parser.add_argument("--robot-start-positions", type=str, default=None,
                         help='Fixed start positions as "y0,x0;y1,x1;..." (overrides corner defaults), e.g. "0,0;3,3"')
@@ -1092,6 +1162,15 @@ def main():
     # Number of eval episodes
     parser.add_argument("--num-eval-episodes", type=int, default=1,
                         help='Number of evaluation episodes to run')
+
+    # Alliance energy-sharing parameters (mirrors train_dqn_vec.py)
+    parser.add_argument("--alliance-groups", type=str, default=None,
+                        help="Alliance groups, e.g. '0,1' or '0,1;2,3'")
+    parser.add_argument("--energy-sharing-mode", type=str, default="none",
+                        choices=["none", "event_only"])
+    parser.add_argument("--energy-sharing-events", type=str, default="charge,collision")
+    parser.add_argument("--energy-sharing-self-weight", type=float, default=2.0 / 3.0)
+    parser.add_argument("--energy-sharing-ally-weight", type=float, default=1.0 / 3.0)
 
     args = parser.parse_args()
 
