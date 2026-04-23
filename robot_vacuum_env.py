@@ -90,7 +90,7 @@ class RobotVacuumEnv:
         # 獨佔充電：有其他 robot 在範圍內時充電無效
         self.exclusive_charging = config.get('exclusive_charging', False)
         # 充電範圍：0=只有站在充電座上才充電，1=3×3 範圍（預設）
-        self.charger_range = config.get('charger_range', 1)
+        self.charger_range = config.get('charger_range', 0)
         # Heterotype charging penalty
         self.heterotype_charge_mode = config.get('heterotype_charge_mode', 'off')
         self.heterotype_charge_factor = config.get('heterotype_charge_factor', 1.0)
@@ -107,6 +107,7 @@ class RobotVacuumEnv:
         # Alliance groups: list of sets, e.g. [{0,1}, {2,3}]
         # allied_pairs: frozenset pairs of robot IDs that should not damage each other
         raw_alliance = config.get('alliance_groups', None)
+        self._alliance_groups = raw_alliance if raw_alliance else []
         self._allied_pairs: set = set()
         if raw_alliance:
             for group in raw_alliance:
@@ -114,6 +115,13 @@ class RobotVacuumEnv:
                 for i in range(len(ids)):
                     for j in range(i + 1, len(ids)):
                         self._allied_pairs.add((min(ids[i], ids[j]), max(ids[i], ids[j])))
+        # Alliance zone: allied robots must stay within Chebyshev ≤ 1
+        self._alliance_zone = config.get('alliance_zone', False)
+        self._allies_of: list = [[] for _ in range(self.num_robots)]
+        if self._alliance_zone:
+            for (a, b) in self._allied_pairs:
+                self._allies_of[a].append(b)
+                self._allies_of[b].append(a)
         # Stun config: per-robot stun duration (steps forced to STAY after being hit)
         stun_default = int(config.get('stun_steps', 0))
         robot_stun = config.get('robot_stun_steps', None)
@@ -248,12 +256,41 @@ class RobotVacuumEnv:
 
             # 再把隨機位置分配給隨機機器人
             all_cells = [(y, x) for y in range(self.n) for x in range(self.n)]
-            for i in range(self.num_robots):
-                if i in self.random_start_robots:
-                    candidates = [p for p in all_cells if p not in occupied]
-                    pos = random.choice(candidates)
-                    robot_start_positions[i] = pos
-                    occupied.add(pos)
+            if self._alliance_zone and self._alliance_groups:
+                spawned = set()
+                for group in self._alliance_groups:
+                    group_random = [i for i in group if i in self.random_start_robots]
+                    if not group_random:
+                        continue
+                    anchor = random.choice([p for p in all_cells if p not in occupied])
+                    robot_start_positions[group_random[0]] = anchor
+                    occupied.add(anchor)
+                    spawned.add(group_random[0])
+                    for i in group_random[1:]:
+                        placed = [robot_start_positions[j] for j in group_random if j in spawned]
+                        zone_cells = [
+                            p for p in all_cells if p not in occupied
+                            and all(max(abs(p[0]-py), abs(p[1]-px)) <= 1 for py, px in placed)
+                        ]
+                        if not zone_cells:
+                            zone_cells = [p for p in all_cells if p not in occupied]
+                        pos = random.choice(zone_cells)
+                        robot_start_positions[i] = pos
+                        occupied.add(pos)
+                        spawned.add(i)
+                for i in range(self.num_robots):
+                    if i in self.random_start_robots and i not in spawned:
+                        candidates = [p for p in all_cells if p not in occupied]
+                        pos = random.choice(candidates)
+                        robot_start_positions[i] = pos
+                        occupied.add(pos)
+            else:
+                for i in range(self.num_robots):
+                    if i in self.random_start_robots:
+                        candidates = [p for p in all_cells if p not in occupied]
+                        pos = random.choice(candidates)
+                        robot_start_positions[i] = pos
+                        occupied.add(pos)
 
         # 計算全域最大血量（所有 robot 共用，弱者可以充電到這個上限）
         global_max_energy = max(self.robot_energies)
@@ -730,11 +767,25 @@ class RobotVacuumEnv:
             state['energy_events'] = self._step_single_energy_events
             return state
 
-        # 1d. Stun: 若仍在 stun 中，強制 STAY 並立即遞減 counter
-        # stun_steps=N 精確等於 N 次輪到該 robot 時不能動
+        # 1d. Stun: 若仍在 stun 中，強制 STAY
+        # 只在 is_last_turn 時遞減，確保 stun_steps=N 精確等於 N 個 global step 不能動
         if self.stun_enabled and robot['stun_counter'] > 0:
             action = self.ACTION_STAY
-            robot['stun_counter'] -= 1
+            if is_last_turn:
+                robot['stun_counter'] -= 1
+
+        # 1e. Alliance zone: 若移動會使與任一盟友的 Chebyshev 距離 > 1，強制 STAY
+        if self._alliance_zone and action != self.ACTION_STAY:
+            dy_map = {self.ACTION_UP: -1, self.ACTION_DOWN: 1, self.ACTION_LEFT: 0, self.ACTION_RIGHT: 0}
+            dx_map = {self.ACTION_UP: 0,  self.ACTION_DOWN: 0, self.ACTION_LEFT: -1, self.ACTION_RIGHT: 1}
+            new_y = robot['y'] + dy_map.get(action, 0)
+            new_x = robot['x'] + dx_map.get(action, 0)
+            for ally_id in self._allies_of[robot_id]:
+                ally = self.robots[ally_id]
+                if ally['is_active']:
+                    if max(abs(new_y - ally['y']), abs(new_x - ally['x'])) > 1:
+                        action = self.ACTION_STAY
+                        break
 
         # 2. 處理動作
         if action == self.ACTION_STAY:

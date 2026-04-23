@@ -793,6 +793,7 @@ class VectorizedMultiAgentTrainer:
             'robot_stun_steps': robot_stun_steps,
             # Alliance energy-sharing (optional, defaults to disabled)
             'alliance_groups': _alliance_groups,
+            'alliance_zone': getattr(args, 'alliance_zone', False),
             'energy_sharing_mode': getattr(args, 'energy_sharing_mode', 'none'),
             'energy_sharing_events': _energy_sharing_events,
             'energy_sharing_self_weight': getattr(args, 'energy_sharing_self_weight', 2.0 / 3.0),
@@ -929,17 +930,45 @@ class VectorizedMultiAgentTrainer:
         # Model saving
         self.save_dir = args.save_dir
         os.makedirs(self.save_dir, exist_ok=True)
+        self._write_training_config()
 
         # Best model tracking
         self.best_metric = float('-inf')
 
         # Pre-allocated tensors for batch inference
         if self.use_vec_env:
-            self._obs_tensor = torch.zeros(self.num_envs, self.n_agents, observation_dim, 
+            self._obs_tensor = torch.zeros(self.num_envs, self.n_agents, observation_dim,
                                           dtype=torch.float32, device=self.device)
         else:
             self._obs_tensor = torch.zeros(self.n_agents, observation_dim,
                                           dtype=torch.float32, device=self.device)
+
+        # Per-robot persistent CUDA buffers for select_actions_for_robot
+        # Avoids CUDA allocator overhead (~1-5μs per call) across 2000+ inference calls per 500 steps
+        _use_cuda = str(self.device).startswith('cuda')
+        self._infer_obs_buf: dict = {
+            i: torch.empty(self.num_envs, observation_dim, device=self.device, dtype=torch.float32)
+            for i in range(self.n_agents)
+        } if _use_cuda else {}
+        self._infer_mask_buf: torch.Tensor | None = (
+            torch.empty(self.num_envs, 5, device=self.device, dtype=torch.bool)
+            if _use_cuda else None
+        )
+
+        # Pre-allocated pinned CPU buffers for training batch GPU transfer (DMA path)
+        # torch.from_numpy + .to(device) uses pageable memory → slow pinning per call.
+        # With pre-allocated pinned buffers, transfer goes through DMA (faster).
+        bs = args.batch_size
+        if _use_cuda:
+            self._pin_states  = torch.zeros(bs, observation_dim, pin_memory=True, dtype=torch.float32)
+            self._pin_nstates = torch.zeros(bs, observation_dim, pin_memory=True, dtype=torch.float32)
+            self._pin_rewards = torch.zeros(bs, pin_memory=True, dtype=torch.float32)
+            self._pin_actions = torch.zeros(bs, pin_memory=True, dtype=torch.int64)
+            self._pin_dones   = torch.zeros(bs, pin_memory=True, dtype=torch.float32)
+            self._pin_nsteps  = torch.zeros(bs, pin_memory=True, dtype=torch.int32)
+            self._pin_weights = torch.zeros(bs, pin_memory=True, dtype=torch.float32)
+        else:
+            self._pin_states = None
 
         # Episode statistics tracking (for logging)
         _n = self.num_envs if self.use_vec_env else 1
@@ -1186,10 +1215,32 @@ class VectorizedMultiAgentTrainer:
                 t = t.to(dtype)
             return t.to(self.device, non_blocking=True)
 
+        def _to_tensor_pinned(arr, pin_buf, dtype=None):
+            # Use pre-allocated pinned buffer for DMA transfer (avoids per-call pinning overhead)
+            n = arr.shape[0]
+            src = torch.from_numpy(arr)
+            if dtype is not None:
+                src = src.to(dtype)
+            pin_buf[:n].copy_(src)
+            return pin_buf[:n].to(self.device, non_blocking=True)
+
+        _fast = self._pin_states is not None and batch_size <= self.args.batch_size
+
         if self.use_per:
             beta = self._get_per_beta()
             states_np, actions_np, rewards_np, next_states_np, dones_np, n_steps_np, indices, weights_np = \
                 agent_memory.sample(batch_size, beta)
+            if _fast:
+                return (
+                    _to_tensor_pinned(states_np,   self._pin_states),
+                    _to_tensor_pinned(actions_np,  self._pin_actions),
+                    _to_tensor_pinned(rewards_np,  self._pin_rewards),
+                    _to_tensor_pinned(next_states_np, self._pin_nstates),
+                    _to_tensor_pinned(dones_np,    self._pin_dones),
+                    _to_tensor_pinned(n_steps_np,  self._pin_nsteps),
+                    indices,
+                    _to_tensor_pinned(weights_np,  self._pin_weights),
+                )
             return (
                 _to_tensor(states_np),
                 _to_tensor(actions_np),
@@ -1197,12 +1248,21 @@ class VectorizedMultiAgentTrainer:
                 _to_tensor(next_states_np),
                 _to_tensor(dones_np),
                 _to_tensor(n_steps_np),
-                indices,                              # numpy — for update_priorities
-                _to_tensor(weights_np),               # IS weights tensor
+                indices,
+                _to_tensor(weights_np),
             )
         else:
             states_np, actions_np, rewards_np, next_states_np, dones_np, n_steps_np = \
                 agent_memory.sample(batch_size)
+            if _fast:
+                return (
+                    _to_tensor_pinned(states_np,   self._pin_states),
+                    _to_tensor_pinned(actions_np,  self._pin_actions),
+                    _to_tensor_pinned(rewards_np,  self._pin_rewards),
+                    _to_tensor_pinned(next_states_np, self._pin_nstates),
+                    _to_tensor_pinned(dones_np,    self._pin_dones),
+                    _to_tensor_pinned(n_steps_np,  self._pin_nsteps),
+                )
             return (
                 _to_tensor(states_np),
                 _to_tensor(actions_np),
@@ -1291,7 +1351,8 @@ class VectorizedMultiAgentTrainer:
         else:
             self._train_single()
 
-    def select_actions_for_robot(self, robot_id: int, observations: np.ndarray, frozen: bool = False) -> np.ndarray:
+    def select_actions_for_robot(self, robot_id: int, observations: np.ndarray, frozen: bool = False,
+                                  action_mask: np.ndarray = None) -> np.ndarray:
         """
         為指定 robot 在所有環境中選擇動作
 
@@ -1299,6 +1360,8 @@ class VectorizedMultiAgentTrainer:
             robot_id: 機器人 ID (0 到 n_agents-1)
             observations: shape (num_envs, obs_dim) 的觀測 array
             frozen: if True, use greedy policy (epsilon=0.01) without decaying epsilon
+            action_mask: (num_envs, 5) bool — True=legal. If provided, illegal actions
+                         get Q=-inf so they are never chosen by argmax.
 
         Returns:
             actions: shape (num_envs,) 的動作 array
@@ -1308,12 +1371,27 @@ class VectorizedMultiAgentTrainer:
 
         num_envs = observations.shape[0]
 
+        def _masked_argmax(q: torch.Tensor) -> np.ndarray:
+            if action_mask is not None:
+                mask_t = torch.from_numpy(action_mask).to(q.device)
+                q = q.masked_fill(~mask_t, float('-inf'))
+            return q.argmax(dim=1).cpu().numpy()
+
         # NoisyNet: no epsilon-greedy, noise in weights provides exploration
         if agent.use_noisy:
-            obs_tensor = torch.from_numpy(observations).to(self.device)
+            if robot_id in self._infer_obs_buf:
+                self._infer_obs_buf[robot_id].copy_(torch.from_numpy(observations))
+                obs_tensor = self._infer_obs_buf[robot_id]
+            else:
+                obs_tensor = torch.from_numpy(observations).to(self.device)
             with torch.no_grad():
                 q_values = agent.q_net(obs_tensor)
-                actions = q_values.argmax(dim=1).cpu().numpy()
+                if action_mask is not None and self._infer_mask_buf is not None:
+                    self._infer_mask_buf.copy_(torch.from_numpy(action_mask))
+                    q_values = q_values.masked_fill(~self._infer_mask_buf, float('-inf'))
+                    actions = q_values.argmax(dim=1).cpu().numpy()
+                else:
+                    actions = _masked_argmax(q_values)
             return actions
 
         epsilon = 0.01 if frozen else agent.epsilon
@@ -1322,16 +1400,27 @@ class VectorizedMultiAgentTrainer:
         # 決定哪些環境用 random，哪些用網路
         random_mask = np.random.random(num_envs) < epsilon
 
-        # Random actions
-        actions[random_mask] = np.random.randint(0, agent.action_dim, size=random_mask.sum())
+        # Random actions — sample only from legal actions
+        if random_mask.any():
+            for i in np.where(random_mask)[0]:
+                if action_mask is not None:
+                    legal = np.where(action_mask[i])[0]
+                    actions[i] = np.random.choice(legal) if len(legal) > 0 else 4
+                else:
+                    actions[i] = np.random.randint(0, agent.action_dim)
 
         # Network actions for remaining environments
         if (~random_mask).any():
-            obs_batch = observations[~random_mask]  # (N, obs_dim)
+            obs_batch = observations[~random_mask]
             obs_tensor = torch.from_numpy(obs_batch).to(self.device)
+            nonrandom_mask = action_mask[~random_mask] if action_mask is not None else None
 
             with torch.no_grad():
                 q_values = agent.q_net(obs_tensor)
+                if nonrandom_mask is not None:
+                    q_values = q_values.masked_fill(
+                        ~torch.from_numpy(nonrandom_mask).to(self.device), float('-inf')
+                    )
                 net_actions = q_values.argmax(dim=1).cpu().numpy()
 
             actions[~random_mask] = net_actions
@@ -1554,13 +1643,19 @@ class VectorizedMultiAgentTrainer:
                         actions = self._flee_actions(robot_id, obs)
                     elif is_frozen:
                         obs = self.env.get_observation(robot_id)
-                        actions = self.select_actions_for_robot(robot_id, obs, frozen=True)
+                        amask = self.env.get_valid_action_mask(robot_id) if (
+                            self.use_vec_env and isinstance(self.env, BatchRobotVacuumEnv)
+                        ) else None
+                        actions = self.select_actions_for_robot(robot_id, obs, frozen=True, action_mask=amask)
                     elif is_seek_charger:
                         obs = self.env.get_observation(robot_id)
                         actions = self._seek_charger_actions(robot_id, obs)
                     else:
                         obs = self.env.get_observation(robot_id)
-                        actions = self.select_actions_for_robot(robot_id, obs)
+                        amask = self.env.get_valid_action_mask(robot_id) if (
+                            self.use_vec_env and isinstance(self.env, BatchRobotVacuumEnv)
+                        ) else None
+                        actions = self.select_actions_for_robot(robot_id, obs, action_mask=amask)
 
                     # --- Track alive state before step (for replay buffer filtering) ---
                     if is_learning and self.use_vec_env and isinstance(self.env, BatchRobotVacuumEnv):
@@ -2079,7 +2174,52 @@ class VectorizedMultiAgentTrainer:
             model_path = os.path.join(save_path, f"{agent_id}.pt")
             agent.save(model_path)
 
+        # Write training_config.json to model root (once, on first save)
+        self._write_training_config()
+
         print(f"Models saved to: {save_path}")
+
+    def _write_training_config(self):
+        """Write env/arch parameters to training_config.json in save_dir for reproducibility."""
+        import json as _json
+        config_path = os.path.join(self.save_dir, "training_config.json")
+        if os.path.exists(config_path):
+            return
+        a = self.args
+        n = self.num_robots
+        def _get(attr, default=None):
+            return getattr(a, attr, default)
+        config = {
+            "env_n":              _get("env_n"),
+            "num_robots":         n,
+            "charger_positions":  _get("charger_positions"),
+            "charger_range":      _get("charger_range", 0),
+            "exclusive_charging": _get("exclusive_charging", False),
+            "no_dust":            _get("no_dust", False),
+            "e_move":             _get("e_move"),
+            "e_charge":           _get("e_charge"),
+            "e_collision":        _get("e_collision"),
+            "e_boundary":         _get("e_boundary"),
+            "e_decay":            _get("e_decay", 0.0),
+            "robot_energies":     [_get(f"robot_{i}_energy") for i in range(n)],
+            "robot_speeds":       [_get(f"robot_{i}_speed") for i in range(n)],
+            "robot_attack_powers":[_get(f"robot_{i}_attack_power") for i in range(n)],
+            "robot_stun_steps":   [_get(f"robot_{i}_stun_steps") for i in range(n)],
+            "robot_docking_steps":[_get(f"robot_{i}_docking_steps") for i in range(n)],
+            "alliance_groups":    _get("alliance_groups"),
+            "alliance_zone":      _get("alliance_zone", False),
+            "energy_sharing_mode":        _get("energy_sharing_mode", "none"),
+            "energy_sharing_events":      _get("energy_sharing_events", "charge,collision"),
+            "energy_sharing_self_weight": _get("energy_sharing_self_weight"),
+            "energy_sharing_ally_weight": _get("energy_sharing_ally_weight"),
+            "dueling":            _get("dueling", False),
+            "noisy":              _get("noisy", False),
+            "c51":                _get("c51", False),
+            "max_episode_steps":  _get("max_episode_steps"),
+        }
+        with open(config_path, "w") as f:
+            _json.dump(config, f, indent=2)
+        print(f"[Config] training_config.json written to {self.save_dir}")
 
 
 def parse_alliance_groups(s: str, num_robots: int):
@@ -2179,8 +2319,8 @@ def main():
                         help="Robot 3 專用暈眩步數（覆蓋 --stun-steps）")
     parser.add_argument("--shuffle-step-order", action="store_true", default=False,
                         help="每步隨機化 robot 行動順序（消除 sequential stepping 的先後手優勢）")
-    parser.add_argument("--charger-range", type=int, default=1,
-                        help="充電範圍：0=只有站在充電座上，1=3×3（預設）")
+    parser.add_argument("--charger-range", type=int, default=0,
+                        help="充電範圍：0=只有站在充電座上（預設），1=3×3")
     parser.add_argument("--scripted-robots", type=str, default="",
                         help='Comma-separated robot IDs to fix as STAY (no training), e.g. "1" or "1,2"')
     parser.add_argument("--random-robots", type=str, default="",
@@ -2318,6 +2458,8 @@ def main():
     # Alliance energy-sharing parameters (all optional, default = disabled)
     parser.add_argument("--alliance-groups", type=str, default=None,
                         help="Alliance groups as comma-separated robot IDs, e.g. '0,1' or '0,1;2,3'")
+    parser.add_argument("--alliance-zone", action="store_true", default=False,
+                        help="Enforce Chebyshev ≤ 1 between allied robots (zone moves with them)")
     parser.add_argument("--energy-sharing-mode", type=str, default="none",
                         choices=["none", "event_only"],
                         help="Energy sharing mode: none (default) or event_only")
@@ -2475,7 +2617,7 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
 
         evo_cmd = [
-            "python", "plot_attack_evolution.py",
+            "python", "tools/plot_attack_evolution.py",
             "--model-dir", trainer.save_dir,
             "--r1-policy", "model",
             "--num-points", "60",

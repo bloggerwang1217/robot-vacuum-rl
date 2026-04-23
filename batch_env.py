@@ -89,6 +89,15 @@ class BatchRobotVacuumEnv:
                 for _j in range(_i + 1, len(ids)):
                     self._allied_pairs.add((min(ids[_i], ids[_j]), max(ids[_i], ids[_j])))
 
+        # ── Alliance zone: allied robots must stay within Chebyshev ≤ 1 ────
+        self._alliance_zone = env_kwargs.get('alliance_zone', False)
+        # Precompute per-robot list of allies (for zone enforcement)
+        self._allies_of: list = [[] for _ in range(R)]
+        if self._alliance_zone:
+            for (a, b) in self._allied_pairs:
+                self._allies_of[a].append(b)
+                self._allies_of[b].append(a)
+
         # ── Per-robot attack power (damage dealt when this robot collides) ─
         attack_powers = env_kwargs.get('robot_attack_powers', None)
         if attack_powers is not None:
@@ -215,6 +224,30 @@ class BatchRobotVacuumEnv:
         """Returns (N, obs_dim)."""
         return self._build_obs(robot_id)
 
+    def get_valid_action_mask(self, robot_id: int) -> np.ndarray:
+        """Returns (N, 5) bool mask — True = action is legal for this robot.
+
+        All 5 actions are legal unless alliance_zone is enabled, in which case
+        actions that would move the robot to Chebyshev distance > 1 from any
+        alive ally are marked False. STAY (4) is always legal.
+        """
+        N = self.N
+        mask = np.ones((N, 5), dtype=bool)
+        if not self._alliance_zone or not self._allies_of[robot_id]:
+            return mask
+        cur_y = self.pos[:, robot_id, 0]  # (N,)
+        cur_x = self.pos[:, robot_id, 1]  # (N,)
+        for a in range(4):  # UP DOWN LEFT RIGHT (not STAY)
+            new_y = cur_y + _ACT_DY[a]
+            new_x = cur_x + _ACT_DX[a]
+            for ally_id in self._allies_of[robot_id]:
+                ally_alive = self.alive[:, ally_id]
+                ally_y = self.pos[:, ally_id, 0]
+                ally_x = self.pos[:, ally_id, 1]
+                chebyshev = np.maximum(np.abs(new_y - ally_y), np.abs(new_x - ally_x))
+                mask[:, a] &= ~(ally_alive & (chebyshev > 1))
+        return mask
+
     def step_single(self, robot_id: int, actions: np.ndarray, is_last_turn: bool = True):
         """
         Execute robot_id's action across all N envs simultaneously.
@@ -234,13 +267,27 @@ class BatchRobotVacuumEnv:
         N, n, R = self.N, self.n, self.R
         rid = robot_id
 
-        # ── Stun: force STAY if stunned, decrement counter immediately ───
-        # stun_steps=N 精確等於 N 次輪到該 robot 時不能動
+        # ── Stun: force STAY if stunned, decrement once per global turn ───
+        # stun_steps=N 精確等於 N 個 global step 不能動（與 speed 無關）
         if self.stun_enabled:
             stunned = self.stun_counter[:, rid] > 0
             actions = actions.copy()
             actions[stunned] = _STAY
-            self.stun_counter[stunned, rid] -= 1
+            if is_last_turn:
+                self.stun_counter[stunned, rid] -= 1
+
+        # ── Alliance zone: force STAY if move would break Chebyshev ≤ 1 ──
+        if self._alliance_zone and self._allies_of[rid]:
+            actions = actions if isinstance(actions, np.ndarray) and actions.flags.writeable else actions.copy()
+            for ally_id in self._allies_of[rid]:
+                # Planned position after action
+                new_y = self.pos[:, rid, 0] + _ACT_DY[actions]
+                new_x = self.pos[:, rid, 1] + _ACT_DX[actions]
+                ally_y = self.pos[:, ally_id, 0]
+                ally_x = self.pos[:, ally_id, 1]
+                chebyshev = np.maximum(np.abs(new_y - ally_y), np.abs(new_x - ally_x))
+                violates = (actions != _STAY) & (chebyshev > 1)
+                actions[violates] = _STAY
 
         # ── Reset per-step tracking ────────────────────────────────────────
         # NOTE: prev_energy and died_this_step are NOT reset here.
@@ -621,12 +668,51 @@ class BatchRobotVacuumEnv:
                 all_cells = [(r, c) for r in range(n) for c in range(n)]
                 occupied  = {(self.pos[env_idx, i, 0], self.pos[env_idx, i, 1])
                              for i in range(self.R) if i not in self.random_start_robots}
-                for i in self.random_start_robots:
-                    candidates = [p for p in all_cells if p not in occupied]
-                    y, x = random.choice(candidates)
-                    self.pos[env_idx, i, 0] = y
-                    self.pos[env_idx, i, 1] = x
-                    occupied.add((y, x))
+
+                if self._alliance_zone and self._alliance_groups:
+                    # Spawn allied groups together (Chebyshev ≤ 1), then remaining solo
+                    spawned = set()
+                    for group in self._alliance_groups:
+                        group_random = [i for i in group if i in self.random_start_robots]
+                        if not group_random:
+                            continue
+                        # Pick anchor for first robot in group
+                        anchor_candidates = [p for p in all_cells if p not in occupied]
+                        ay, ax = random.choice(anchor_candidates)
+                        self.pos[env_idx, group_random[0], 0] = ay
+                        self.pos[env_idx, group_random[0], 1] = ax
+                        occupied.add((ay, ax))
+                        spawned.add(group_random[0])
+                        # Each subsequent ally must be Chebyshev ≤ 1 from all placed allies
+                        for i in group_random[1:]:
+                            placed = [(self.pos[env_idx, j, 0], self.pos[env_idx, j, 1])
+                                      for j in group_random if j in spawned]
+                            zone_cells = [
+                                p for p in all_cells if p not in occupied
+                                and all(max(abs(p[0]-py), abs(p[1]-px)) <= 1 for py, px in placed)
+                            ]
+                            if not zone_cells:
+                                zone_cells = [p for p in all_cells if p not in occupied]
+                            y, x = random.choice(zone_cells)
+                            self.pos[env_idx, i, 0] = y
+                            self.pos[env_idx, i, 1] = x
+                            occupied.add((y, x))
+                            spawned.add(i)
+                    # Remaining non-allied random robots spawn freely
+                    for i in self.random_start_robots:
+                        if i not in spawned:
+                            candidates = [p for p in all_cells if p not in occupied]
+                            y, x = random.choice(candidates)
+                            self.pos[env_idx, i, 0] = y
+                            self.pos[env_idx, i, 1] = x
+                            occupied.add((y, x))
+                else:
+                    for i in self.random_start_robots:
+                        candidates = [p for p in all_cells if p not in occupied]
+                        y, x = random.choice(candidates)
+                        self.pos[env_idx, i, 0] = y
+                        self.pos[env_idx, i, 1] = x
+                        occupied.add((y, x))
 
         self.energy[env_idx]      = self.init_energies
         self.alive[env_idx]       = True

@@ -72,6 +72,7 @@ class RobotVacuumGymEnv:
                 'thief_spawn': kwargs.get('thief_spawn', False),
                 'legacy_obs': kwargs.get('legacy_obs', False),
                 'alliance_groups': kwargs.get('alliance_groups', None),
+                'alliance_zone': kwargs.get('alliance_zone', False),
                 'energy_sharing_mode': kwargs.get('energy_sharing_mode', 'none'),
                 'energy_sharing_events': kwargs.get('energy_sharing_events', ['charge', 'collision']),
                 'energy_sharing_self_weight': kwargs.get('energy_sharing_self_weight', 2.0 / 3.0),
